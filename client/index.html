@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Nilo WebTransport Physics Demo</title>
+  </head>
+  <body>
+    <main id="app">
+      <canvas id="scene"></canvas>
+
+      <section id="debugPanel" aria-label="Network debug panel">
+        <div class="panel-title">WebTransport Demo</div>
+
+        <label class="field">
+          <span>URL</span>
+          <input id="urlInput" value="https://localhost:4433/webtransport" />
+        </label>
+
+        <label class="field">
+          <span>Certificate SHA-256</span>
+          <input id="hashInput" value="ded2563223766b2f6b61179c544fc3984a34e678aded1438f4316b837af45050" />
+        </label>
+
+        <div class="actions">
+          <button id="connectButton">Connect</button>
+          <button id="disconnectButton" disabled>Disconnect</button>
+        </div>
+
+        <dl class="metrics">
+          <div>
+            <dt>Connection</dt>
+            <dd id="connectionValue">disconnected</dd>
+          </div>
+          <div>
+            <dt>Player ID</dt>
+            <dd id="playerIdValue">-</dd>
+          </div>
+          <div>
+            <dt>RTT</dt>
+            <dd id="rttValue">-</dd>
+          </div>
+          <div>
+            <dt>Server time</dt>
+            <dd id="serverTimeValue">-</dd>
+          </div>
+          <div>
+            <dt>Transport</dt>
+            <dd>WebTransport</dd>
+          </div>
+        </dl>
+
+        <pre id="log"></pre>
+      </section>
+    </main>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
