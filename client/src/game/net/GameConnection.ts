@@ -5,7 +5,7 @@ type MessageHandler = (message: ServerMessage) => void
 type CloseHandler = (reason: string) => void
 type ErrorHandler = (error: Error) => void
 
-export class GameProtocolClient {
+export class GameConnection {
   private transport = new WebTransportLineClient()
   private messageHandlers = new Set<MessageHandler>()
   private closeHandlers = new Set<CloseHandler>()

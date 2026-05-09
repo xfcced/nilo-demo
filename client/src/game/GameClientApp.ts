@@ -2,7 +2,7 @@ import { GameLoop } from '../engine/GameLoop'
 import { KeyboardInput } from '../engine/KeyboardInput'
 import { type AppElements, getAppElements } from './appElements'
 import { ArenaScene } from './ArenaScene'
-import { GameProtocolClient } from './net/GameConnection'
+import { GameConnection } from './net/GameConnection'
 import { DebugPanel } from './ui/DebugPanel'
 
 const FIXED_STEP_MS = 1000 / 60
@@ -14,7 +14,7 @@ export class GameClientApp {
   private debugPanel = new DebugPanel()
   private arena: ArenaScene
   private input = new KeyboardInput()
-  private transport = new GameProtocolClient()
+  private serverConnection = new GameConnection()
   private gameLoop: GameLoop
 
   private inputSeq = 0
@@ -35,15 +35,15 @@ export class GameClientApp {
   }
 
   start(): void {
-    this.bindTransportEvents()
+    this.bindConnectionEvents()
     this.bindUiEvents()
     this.gameLoop.start()
     this.debugPanel.setConnection('disconnected')
     this.debugPanel.setFps(null)
   }
 
-  private bindTransportEvents(): void {
-    this.transport.onMessage((message) => {
+  private bindConnectionEvents(): void {
+    this.serverConnection.onMessage((message) => {
       if (message.type === 'welcome') {
         this.localPlayerId = message.playerId
         this.arena.setLocalPlayerId(message.playerId)
@@ -70,14 +70,14 @@ export class GameClientApp {
       this.debugPanel.log(`server error: ${message.message}`)
     })
 
-    this.transport.onClose((reason) => {
+    this.serverConnection.onClose((reason) => {
       this.resetSessionState()
       this.debugPanel.setConnection('disconnected')
       this.debugPanel.log(`connection closed: ${reason}`)
       this.setButtons(false)
     })
 
-    this.transport.onError((error) => {
+    this.serverConnection.onError((error) => {
       this.debugPanel.log(`message error: ${error.message}`)
     })
   }
@@ -98,8 +98,8 @@ export class GameClientApp {
       this.setButtons(false)
       this.debugPanel.log('connecting...')
 
-      await this.transport.connect(this.elements.urlInput.value.trim(), this.elements.hashInput.value.trim())
-      await this.transport.send({ type: 'join' })
+      await this.serverConnection.connect(this.elements.urlInput.value.trim(), this.elements.hashInput.value.trim())
+      await this.serverConnection.send({ type: 'join' })
 
       this.connected = true
       this.inputSeq = 0
@@ -115,7 +115,7 @@ export class GameClientApp {
   }
 
   private async disconnect(): Promise<void> {
-    await this.transport.close()
+    await this.serverConnection.close()
     this.resetSessionState()
     this.debugPanel.setConnection('disconnected')
     this.debugPanel.setPlayerId(null)
@@ -161,7 +161,7 @@ export class GameClientApp {
   }
 
   private sendPing(): void {
-    void this.transport.send({ type: 'ping', clientTime: performance.now() }).catch((error: unknown) => {
+    void this.serverConnection.send({ type: 'ping', clientTime: performance.now() }).catch((error: unknown) => {
       if (this.connected) {
         this.debugPanel.log(`ping failed: ${String(error)}`)
       }
@@ -172,7 +172,7 @@ export class GameClientApp {
     this.inputSeq += 1
     const movement = this.input.currentMovement()
 
-    void this.transport
+    void this.serverConnection
       .send({
         type: 'input',
         seq: this.inputSeq,
