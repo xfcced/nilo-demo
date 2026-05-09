@@ -1,11 +1,10 @@
-mod protocol;
-mod room;
-mod transport;
+mod game;
+mod net;
 
 use anyhow::{Context, Result};
-use room::Room;
+use game::room::Room;
+use game::server_host::ServerHost;
 use std::sync::Arc;
-use transport::WebTransportServer;
 use tracing::info;
 use wtransport::tls::Sha256DigestFmt;
 use wtransport::Identity;
@@ -27,11 +26,15 @@ async fn main() -> Result<()> {
     print_certificate_hash(&identity);
 
     let room = Arc::new(Room::new());
-    let server = WebTransportServer::new(PORT, identity, room)?;
+    let server = ServerHost::new(PORT, identity, room)?;
     let addr = server.local_addr()?;
 
     info!("server ready");
-    println!("WebTransport URL: https://localhost:{}{}", addr.port(), "/webtransport");
+    println!(
+        "WebTransport URL: https://localhost:{}{}",
+        addr.port(),
+        "/webtransport"
+    );
 
     server.serve().await
 }

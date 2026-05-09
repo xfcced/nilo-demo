@@ -8,9 +8,16 @@ pub enum ClientMessage {
         #[serde(rename = "clientTime")]
         client_time: f64,
     },
+    Input {
+        seq: u64,
+        up: bool,
+        down: bool,
+        left: bool,
+        right: bool,
+    },
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Clone, Debug, Serialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ServerMessage {
     Welcome {
@@ -25,5 +32,21 @@ pub enum ServerMessage {
         #[serde(rename = "serverTime")]
         server_time: f64,
     },
-    Error { message: String },
+    State {
+        #[serde(rename = "serverTime")]
+        server_time: f64,
+        players: Vec<PlayerSnapshot>,
+    },
+    Error {
+        message: String,
+    },
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlayerSnapshot {
+    #[serde(rename = "playerId")]
+    pub player_id: u64,
+    pub x: f32,
+    pub z: f32,
 }

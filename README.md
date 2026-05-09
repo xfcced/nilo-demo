@@ -1,15 +1,18 @@
-# Nilo WebTransport Physics Demo - Phase 1
+# Nilo WebTransport Physics Demo - Phase 2
 
-This phase establishes the minimum foundation for the later multiplayer physics sync demo:
+This phase establishes the minimum server-authoritative multiplayer movement demo:
 
 - Rust WebTransport server
 - Browser WebTransport client
 - `Join -> Welcome`
 - `Ping -> Pong` RTT measurement
+- keyboard input sent from the browser
+- 20 Hz server-authoritative player movement
+- world state broadcast back to all connected players
 - Fixed Three.js arena scene
 - Debug panel for connection state, player id, RTT, server time, and transport
 
-No Rapier, physics sync, prediction, interpolation, lobby, or multi-scene abstraction is included yet.
+No Rapier, client prediction, interpolation, lobby, chat, datagram sync, or multi-scene abstraction is included yet.
 
 ## Run The Server
 
@@ -72,6 +75,8 @@ Click `Connect`. A successful connection shows:
 - RTT updated once per second
 - server time from `Pong`
 
+Use `WASD` or arrow keys to move. Movement is calculated on the server and returned through `state` messages.
+
 ## Current Message Protocol
 
 Client messages are newline-delimited JSON over one reliable bidirectional stream:
@@ -80,6 +85,7 @@ Client messages are newline-delimited JSON over one reliable bidirectional strea
 type ClientMessage =
   | { type: "join" }
   | { type: "ping"; clientTime: number }
+  | { type: "input"; seq: number; up: boolean; down: boolean; left: boolean; right: boolean }
 ```
 
 Server messages:
@@ -88,7 +94,8 @@ Server messages:
 type ServerMessage =
   | { type: "welcome"; playerId: number; serverTime: number }
   | { type: "pong"; clientTime: number; serverTime: number }
+  | { type: "state"; serverTime: number; players: Array<{ playerId: number; x: number; z: number }> }
   | { type: "error"; message: string }
 ```
 
-This is intentionally simple for Phase 1. The protocol can move to binary messages once the transport and scene foundation are stable.
+This is intentionally simple for Phase 2. The protocol can move high-frequency input/state to datagrams or binary messages once the reliable stream foundation is stable.
