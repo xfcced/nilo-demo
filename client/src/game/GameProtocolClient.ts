@@ -1,4 +1,4 @@
-import { WebTransportLineClient } from '../net/WebTransportLineClient'
+import { WebTransportLineClient } from '../engine/WebTransportLineClient'
 import {
   decodeServerMessage,
   encodeClientMessage,
