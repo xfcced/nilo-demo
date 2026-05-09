@@ -1,11 +1,12 @@
 import * as THREE from 'three'
-import type { PlayerSnapshot } from './protocol'
+import type { BoxSnapshot, PlayerSnapshot } from './protocol'
 
 export class ArenaScene {
   private renderer: THREE.WebGLRenderer
   private scene: THREE.Scene
   private camera: THREE.PerspectiveCamera
   private players = new Map<number, THREE.Mesh>()
+  private boxes = new Map<number, THREE.Mesh>()
   private localPlayerId: number | null = null
 
   constructor(canvas: HTMLCanvasElement) {
@@ -36,6 +37,7 @@ export class ArenaScene {
 
   dispose(): void {
     this.clearPlayers()
+    this.clearBoxes()
     this.renderer.dispose()
   }
 
@@ -59,7 +61,7 @@ export class ArenaScene {
         this.scene.add(player)
       }
 
-      player.position.set(snapshot.x, 0.42, snapshot.z)
+      player.position.set(snapshot.x, snapshot.y, snapshot.z)
       this.setPlayerMaterial(player, snapshot.playerId === this.localPlayerId)
     }
 
@@ -78,6 +80,40 @@ export class ArenaScene {
       this.disposePlayer(player)
     }
     this.players.clear()
+  }
+
+  setBoxes(snapshots: BoxSnapshot[]): void {
+    const activeBoxIds = new Set<number>()
+
+    for (const snapshot of snapshots) {
+      activeBoxIds.add(snapshot.boxId)
+
+      let box = this.boxes.get(snapshot.boxId)
+      if (!box) {
+        box = this.createBox(snapshot.boxId)
+        this.boxes.set(snapshot.boxId, box)
+        this.scene.add(box)
+      }
+
+      box.position.set(snapshot.x, snapshot.y, snapshot.z)
+      box.quaternion.set(snapshot.qx, snapshot.qy, snapshot.qz, snapshot.qw)
+    }
+
+    for (const [boxId, box] of this.boxes) {
+      if (!activeBoxIds.has(boxId)) {
+        this.scene.remove(box)
+        this.disposeMesh(box)
+        this.boxes.delete(boxId)
+      }
+    }
+  }
+
+  clearBoxes(): void {
+    for (const box of this.boxes.values()) {
+      this.scene.remove(box)
+      this.disposeMesh(box)
+    }
+    this.boxes.clear()
   }
 
   private buildArena(): void {
@@ -100,9 +136,6 @@ export class ArenaScene {
     this.addWall(-6, 0.55, 0, 0.24, 1.1, 12.4)
     this.addWall(6, 0.55, 0, 0.24, 1.1, 12.4)
 
-    this.addBox(-2.8, 0.45, -1.4, 0xb55f4d)
-    this.addBox(1.8, 0.45, -0.2, 0xd8a640)
-    this.addBox(0.2, 0.45, 2.4, 0x4a8b74)
     this.addGoalZone(3.8, 0.01, 3.8)
   }
 
@@ -113,15 +146,6 @@ export class ArenaScene {
     )
     wall.position.set(x, y, z)
     this.scene.add(wall)
-  }
-
-  private addBox(x: number, y: number, z: number, color: number): void {
-    const box = new THREE.Mesh(
-      new THREE.BoxGeometry(0.9, 0.9, 0.9),
-      new THREE.MeshStandardMaterial({ color, roughness: 0.7, metalness: 0.02 })
-    )
-    box.position.set(x, y, z)
-    this.scene.add(box)
   }
 
   private addGoalZone(x: number, y: number, z: number): void {
@@ -141,6 +165,18 @@ export class ArenaScene {
     return mesh
   }
 
+  private createBox(boxId: number): THREE.Mesh {
+    const colors = [0xb55f4d, 0xd8a640, 0x4a8b74]
+    return new THREE.Mesh(
+      new THREE.BoxGeometry(0.9, 0.9, 0.9),
+      new THREE.MeshStandardMaterial({
+        color: colors[(boxId - 1) % colors.length],
+        roughness: 0.7,
+        metalness: 0.02,
+      })
+    )
+  }
+
   private setPlayerMaterial(player: THREE.Mesh, isLocal: boolean): void {
     const material = player.material
     if (material instanceof THREE.MeshStandardMaterial) {
@@ -149,11 +185,15 @@ export class ArenaScene {
   }
 
   private disposePlayer(player: THREE.Mesh): void {
-    player.geometry.dispose()
-    if (Array.isArray(player.material)) {
-      player.material.forEach((material) => material.dispose())
+    this.disposeMesh(player)
+  }
+
+  private disposeMesh(mesh: THREE.Mesh): void {
+    mesh.geometry.dispose()
+    if (Array.isArray(mesh.material)) {
+      mesh.material.forEach((material) => material.dispose())
     } else {
-      player.material.dispose()
+      mesh.material.dispose()
     }
   }
 

@@ -1,18 +1,19 @@
 # Nilo WebTransport Physics Demo - Phase 2
 
-This phase establishes the minimum server-authoritative multiplayer movement demo:
+This phase establishes the minimum server-authoritative multiplayer physics demo:
 
 - Rust WebTransport server
 - Browser WebTransport client
 - `Join -> Welcome`
 - `Ping -> Pong` RTT measurement
 - keyboard input sent from the browser
-- 20 Hz server-authoritative player movement
+- Rapier-backed server-authoritative player movement
+- dynamic server-owned physics boxes included in state snapshots
 - world state broadcast back to all connected players
 - Fixed Three.js arena scene
 - Debug panel for connection state, player id, RTT, server time, and transport
 
-No Rapier, client prediction, interpolation, lobby, chat, datagram sync, or multi-scene abstraction is included yet.
+No client prediction, interpolation, lobby, chat, datagram sync, goal scoring, client box rendering, or multi-scene abstraction is included yet.
 
 ## Run The Server
 
@@ -94,7 +95,12 @@ Server messages:
 type ServerMessage =
   | { type: "welcome"; playerId: number; serverTime: number }
   | { type: "pong"; clientTime: number; serverTime: number }
-  | { type: "state"; serverTime: number; players: Array<{ playerId: number; x: number; z: number }> }
+  | {
+      type: "state";
+      serverTime: number;
+      players: Array<{ playerId: number; x: number; y: number; z: number }>;
+      boxes: Array<{ boxId: number; x: number; y: number; z: number; qx: number; qy: number; qz: number; qw: number }>;
+    }
   | { type: "error"; message: string }
 ```
 

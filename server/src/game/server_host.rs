@@ -224,6 +224,7 @@ fn broadcast_room_state(room: &Room, server_time: f64) {
     let message = ServerMessage::State {
         server_time,
         players: room.player_snapshots(),
+        boxes: room.box_snapshots(),
     };
 
     for sender in room.outbound_senders() {

@@ -59,6 +59,7 @@ export class GameClientApp {
       if (message.type === 'state') {
         this.debugPanel.setServerTime(message.serverTime)
         this.arena.setPlayers(message.players)
+        this.arena.setBoxes(message.boxes)
         return
       }
 
@@ -172,6 +173,7 @@ export class GameClientApp {
     this.pingElapsedMs = PING_SEND_MS
     this.arena.setLocalPlayerId(null)
     this.arena.clearPlayers()
+    this.arena.clearBoxes()
   }
 
   private setButtons(connected: boolean): void {
