@@ -1,11 +1,12 @@
 import * as THREE from 'three'
+import type { PlayerSnapshot } from './protocol'
 
 export class ArenaScene {
   private renderer: THREE.WebGLRenderer
   private scene: THREE.Scene
   private camera: THREE.PerspectiveCamera
-  private player: THREE.Mesh
-  private animationFrame = 0
+  private players = new Map<number, THREE.Mesh>()
+  private localPlayerId: number | null = null
 
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
@@ -19,26 +20,64 @@ export class ArenaScene {
     this.camera.position.set(8, 8, 10)
     this.camera.lookAt(0, 0, 0)
 
-    this.player = this.createPlayer()
     this.buildArena()
     this.resize()
 
     window.addEventListener('resize', () => this.resize())
   }
 
-  start(): void {
-    const animate = () => {
-      this.animationFrame = window.requestAnimationFrame(animate)
-      this.player.rotation.y += 0.01
-      this.renderer.render(this.scene, this.camera)
-    }
+  update(_deltaSeconds: number): void {
+    // 当前 demo 的位置由服务端 state 驱动，这里先保留客户端场景更新入口。
+  }
 
-    animate()
+  render(): void {
+    this.renderer.render(this.scene, this.camera)
   }
 
   dispose(): void {
-    window.cancelAnimationFrame(this.animationFrame)
+    this.clearPlayers()
     this.renderer.dispose()
+  }
+
+  setLocalPlayerId(playerId: number | null): void {
+    this.localPlayerId = playerId
+    for (const [id, player] of this.players) {
+      this.setPlayerMaterial(player, id === this.localPlayerId)
+    }
+  }
+
+  setPlayers(snapshots: PlayerSnapshot[]): void {
+    const activePlayerIds = new Set<number>()
+
+    for (const snapshot of snapshots) {
+      activePlayerIds.add(snapshot.playerId)
+
+      let player = this.players.get(snapshot.playerId)
+      if (!player) {
+        player = this.createPlayer(snapshot.playerId === this.localPlayerId)
+        this.players.set(snapshot.playerId, player)
+        this.scene.add(player)
+      }
+
+      player.position.set(snapshot.x, 0.42, snapshot.z)
+      this.setPlayerMaterial(player, snapshot.playerId === this.localPlayerId)
+    }
+
+    for (const [playerId, player] of this.players) {
+      if (!activePlayerIds.has(playerId)) {
+        this.scene.remove(player)
+        this.disposePlayer(player)
+        this.players.delete(playerId)
+      }
+    }
+  }
+
+  clearPlayers(): void {
+    for (const player of this.players.values()) {
+      this.scene.remove(player)
+      this.disposePlayer(player)
+    }
+    this.players.clear()
   }
 
   private buildArena(): void {
@@ -65,7 +104,6 @@ export class ArenaScene {
     this.addBox(1.8, 0.45, -0.2, 0xd8a640)
     this.addBox(0.2, 0.45, 2.4, 0x4a8b74)
     this.addGoalZone(3.8, 0.01, 3.8)
-    this.scene.add(this.player)
   }
 
   private addWall(x: number, y: number, z: number, width: number, height: number, depth: number): void {
@@ -95,13 +133,28 @@ export class ArenaScene {
     this.scene.add(zone)
   }
 
-  private createPlayer(): THREE.Mesh {
+  private createPlayer(isLocal: boolean): THREE.Mesh {
     const mesh = new THREE.Mesh(
       new THREE.SphereGeometry(0.42, 32, 24),
-      new THREE.MeshStandardMaterial({ color: 0x2f6fda, roughness: 0.55 })
+      new THREE.MeshStandardMaterial({ color: isLocal ? 0x2f6fda : 0xb55f4d, roughness: 0.55 })
     )
-    mesh.position.set(0, 0.42, -3.3)
     return mesh
+  }
+
+  private setPlayerMaterial(player: THREE.Mesh, isLocal: boolean): void {
+    const material = player.material
+    if (material instanceof THREE.MeshStandardMaterial) {
+      material.color.setHex(isLocal ? 0x2f6fda : 0xb55f4d)
+    }
+  }
+
+  private disposePlayer(player: THREE.Mesh): void {
+    player.geometry.dispose()
+    if (Array.isArray(player.material)) {
+      player.material.forEach((material) => material.dispose())
+    } else {
+      player.material.dispose()
+    }
   }
 
   private resize(): void {

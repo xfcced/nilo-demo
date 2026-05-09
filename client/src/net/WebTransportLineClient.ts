@@ -1,15 +1,14 @@
-import { decodeServerMessage, encodeMessage, type ClientMessage, type ServerMessage } from './protocol'
-
-type MessageHandler = (message: ServerMessage) => void
+type LineHandler = (line: string) => void
 type CloseHandler = (reason: string) => void
 type ErrorHandler = (error: Error) => void
 
-export class WebTransportClient {
+export class WebTransportLineClient {
   private transport: WebTransport | null = null
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null
-  private messageHandlers = new Set<MessageHandler>()
+  private lineHandlers = new Set<LineHandler>()
   private closeHandlers = new Set<CloseHandler>()
   private errorHandlers = new Set<ErrorHandler>()
+  private encoder = new TextEncoder()
 
   async connect(url: string, certificateHashHex: string): Promise<void> {
     if (!window.WebTransport) {
@@ -36,17 +35,17 @@ export class WebTransportClient {
       .catch((error: unknown) => this.emitClose(String(error)))
   }
 
-  async send(message: ClientMessage): Promise<void> {
+  async sendLine(line: string): Promise<void> {
     if (!this.writer) {
       throw new Error('WebTransport stream is not connected')
     }
 
-    await this.writer.write(encodeMessage(message))
+    await this.writer.write(this.encoder.encode(`${line}\n`))
   }
 
-  onMessage(handler: MessageHandler): () => void {
-    this.messageHandlers.add(handler)
-    return () => this.messageHandlers.delete(handler)
+  onLine(handler: LineHandler): () => void {
+    this.lineHandlers.add(handler)
+    return () => this.lineHandlers.delete(handler)
   }
 
   onClose(handler: CloseHandler): () => void {
@@ -86,18 +85,13 @@ export class WebTransportClient {
         buffer = lines.pop() ?? ''
 
         for (const line of lines) {
-          if (!line.trim()) {
-            continue
-          }
-
-          try {
-            const message = decodeServerMessage(line)
-            this.messageHandlers.forEach((handler) => handler(message))
-          } catch (error) {
-            this.emitError(error instanceof Error ? error : new Error(String(error)))
+          if (line.trim()) {
+            this.lineHandlers.forEach((handler) => handler(line))
           }
         }
       }
+    } catch (error) {
+      this.emitError(error instanceof Error ? error : new Error(String(error)))
     } finally {
       reader.releaseLock()
     }
