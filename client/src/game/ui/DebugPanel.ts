@@ -4,6 +4,7 @@ type DebugPanelElements = {
   connectionValue: HTMLElement
   playerIdValue: HTMLElement
   rttValue: HTMLElement
+  fpsValue: HTMLElement
   serverTimeValue: HTMLElement
   log: HTMLPreElement
 }
@@ -16,6 +17,7 @@ export class DebugPanel {
       connectionValue: getElement('connectionValue'),
       playerIdValue: getElement('playerIdValue'),
       rttValue: getElement('rttValue'),
+      fpsValue: getElement('fpsValue'),
       serverTimeValue: getElement('serverTimeValue'),
       log: getElement('log'),
     }
@@ -32,6 +34,10 @@ export class DebugPanel {
 
   setRtt(rttMs: number | null): void {
     this.elements.rttValue.textContent = rttMs === null ? '-' : `${Math.round(rttMs)} ms`
+  }
+
+  setFps(fps: number | null): void {
+    this.elements.fpsValue.textContent = fps === null ? '-' : `${Math.round(fps)}`
   }
 
   setServerTime(serverTime: number | null): void {

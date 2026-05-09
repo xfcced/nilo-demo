@@ -8,6 +8,7 @@ import { DebugPanel } from './ui/DebugPanel'
 const FIXED_STEP_MS = 1000 / 60
 const MAX_FRAME_MS = 250
 const PING_SEND_MS = 1000
+const FPS_SAMPLE_MS = 500
 
 export class GameClientApp {
   private debugPanel = new DebugPanel()
@@ -20,6 +21,8 @@ export class GameClientApp {
   private localPlayerId: number | null = null
   private connected = false
   private pingElapsedMs = PING_SEND_MS
+  private fpsElapsedMs = 0
+  private fpsFrameCount = 0
 
   constructor(private elements: AppElements = getAppElements()) {
     this.arena = new ArenaScene(elements.canvas)
@@ -27,7 +30,7 @@ export class GameClientApp {
       fixedStepMs: FIXED_STEP_MS,
       maxFrameMs: MAX_FRAME_MS,
       update: (deltaMs) => this.fixedUpdate(deltaMs),
-      render: () => this.arena.render(),
+      drawFrame: (frameMs) => this.render(frameMs),
     })
   }
 
@@ -36,6 +39,7 @@ export class GameClientApp {
     this.bindUiEvents()
     this.gameLoop.start()
     this.debugPanel.setConnection('disconnected')
+    this.debugPanel.setFps(null)
   }
 
   private bindTransportEvents(): void {
@@ -139,6 +143,24 @@ export class GameClientApp {
       this.pingElapsedMs -= PING_SEND_MS
       this.sendPing()
     }
+  }
+
+  private render(frameMs: number): void {
+    this.updateFps(frameMs)
+    this.arena.render()
+  }
+
+  private updateFps(frameMs: number): void {
+    this.fpsElapsedMs += frameMs
+    this.fpsFrameCount += 1
+
+    if (this.fpsElapsedMs < FPS_SAMPLE_MS) {
+      return
+    }
+
+    this.debugPanel.setFps((this.fpsFrameCount * 1000) / this.fpsElapsedMs)
+    this.fpsElapsedMs = 0
+    this.fpsFrameCount = 0
   }
 
   private sendPing(): void {

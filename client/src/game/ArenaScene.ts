@@ -124,10 +124,7 @@ export class ArenaScene {
     keyLight.position.set(6, 10, 8)
     this.scene.add(keyLight)
 
-    const floor = new THREE.Mesh(
-      new THREE.BoxGeometry(12, 0.24, 12),
-      new THREE.MeshStandardMaterial({ color: 0xf7f9fb, roughness: 0.82 })
-    )
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(12, 0.24, 12), new THREE.MeshStandardMaterial({ color: 0xf7f9fb, roughness: 0.82 }))
     floor.position.y = -0.12
     this.scene.add(floor)
 
@@ -140,28 +137,19 @@ export class ArenaScene {
   }
 
   private addWall(x: number, y: number, z: number, width: number, height: number, depth: number): void {
-    const wall = new THREE.Mesh(
-      new THREE.BoxGeometry(width, height, depth),
-      new THREE.MeshStandardMaterial({ color: 0x485763, roughness: 0.75 })
-    )
+    const wall = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), new THREE.MeshStandardMaterial({ color: 0x485763, roughness: 0.75 }))
     wall.position.set(x, y, z)
     this.scene.add(wall)
   }
 
   private addGoalZone(x: number, y: number, z: number): void {
-    const zone = new THREE.Mesh(
-      new THREE.CylinderGeometry(1.25, 1.25, 0.04, 48),
-      new THREE.MeshStandardMaterial({ color: 0x2f83cc, transparent: true, opacity: 0.46 })
-    )
+    const zone = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 0.04, 48), new THREE.MeshStandardMaterial({ color: 0x2f83cc, transparent: true, opacity: 0.46 }))
     zone.position.set(x, y, z)
     this.scene.add(zone)
   }
 
   private createPlayer(isLocal: boolean): THREE.Mesh {
-    const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.42, 32, 24),
-      new THREE.MeshStandardMaterial({ color: isLocal ? 0x2f6fda : 0xb55f4d, roughness: 0.55 })
-    )
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.42, 32, 24), new THREE.MeshStandardMaterial({ color: isLocal ? 0x2f6fda : 0xb55f4d, roughness: 0.55 }))
     return mesh
   }
 
@@ -173,7 +161,7 @@ export class ArenaScene {
         color: colors[(boxId - 1) % colors.length],
         roughness: 0.7,
         metalness: 0.02,
-      })
+      }),
     )
   }
 

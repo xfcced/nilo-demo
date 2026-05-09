@@ -1,7 +1,4 @@
-export type ClientMessage =
-  | { type: 'join' }
-  | { type: 'ping'; clientTime: number }
-  | { type: 'input'; seq: number; up: boolean; down: boolean; left: boolean; right: boolean }
+export type ClientMessage = { type: 'join' } | { type: 'ping'; clientTime: number } | { type: 'input'; seq: number; up: boolean; down: boolean; left: boolean; right: boolean }
 
 export type ServerMessage =
   | { type: 'welcome'; playerId: number; serverTime: number }
@@ -55,13 +52,7 @@ function isServerMessage(value: unknown): value is ServerMessage {
   }
 
   if (message.type === 'state') {
-    return (
-      typeof message.serverTime === 'number' &&
-      Array.isArray(message.players) &&
-      message.players.every(isPlayerSnapshot) &&
-      Array.isArray(message.boxes) &&
-      message.boxes.every(isBoxSnapshot)
-    )
+    return typeof message.serverTime === 'number' && Array.isArray(message.players) && message.players.every(isPlayerSnapshot) && Array.isArray(message.boxes) && message.boxes.every(isBoxSnapshot)
   }
 
   if (message.type === 'error') {
@@ -77,12 +68,7 @@ function isPlayerSnapshot(value: unknown): value is PlayerSnapshot {
   }
 
   const player = value as Partial<PlayerSnapshot>
-  return (
-    typeof player.playerId === 'number' &&
-    typeof player.x === 'number' &&
-    typeof player.y === 'number' &&
-    typeof player.z === 'number'
-  )
+  return typeof player.playerId === 'number' && typeof player.x === 'number' && typeof player.y === 'number' && typeof player.z === 'number'
 }
 
 function isBoxSnapshot(value: unknown): value is BoxSnapshot {
