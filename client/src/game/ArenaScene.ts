@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { BoxSnapshot, PlayerSnapshot } from './protocol'
+import type { BoxSnapshot, PlayerSnapshot } from './net/protocol'
 
 export class ArenaScene {
   private renderer: THREE.WebGLRenderer

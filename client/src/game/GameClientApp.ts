@@ -2,7 +2,7 @@ import { GameLoop } from '../engine/GameLoop'
 import { KeyboardInput } from '../engine/KeyboardInput'
 import { type AppElements, getAppElements } from './appElements'
 import { ArenaScene } from './ArenaScene'
-import { GameProtocolClient } from './GameProtocolClient'
+import { GameProtocolClient } from './net/GameConnection'
 import { DebugPanel } from './ui/DebugPanel'
 
 const FIXED_STEP_MS = 1000 / 60
@@ -98,10 +98,7 @@ export class GameClientApp {
       this.setButtons(false)
       this.debugPanel.log('connecting...')
 
-      await this.transport.connect(
-        this.elements.urlInput.value.trim(),
-        this.elements.hashInput.value.trim()
-      )
+      await this.transport.connect(this.elements.urlInput.value.trim(), this.elements.hashInput.value.trim())
       await this.transport.send({ type: 'join' })
 
       this.connected = true

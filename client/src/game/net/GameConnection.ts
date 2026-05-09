@@ -1,10 +1,5 @@
-import { WebTransportLineClient } from '../engine/WebTransportLineClient'
-import {
-  decodeServerMessage,
-  encodeClientMessage,
-  type ClientMessage,
-  type ServerMessage,
-} from './protocol'
+import { WebTransportLineClient } from '../../engine/WebTransportLineClient'
+import { decodeServerMessage, encodeClientMessage, type ClientMessage, type ServerMessage } from './protocol'
 
 type MessageHandler = (message: ServerMessage) => void
 type CloseHandler = (reason: string) => void
