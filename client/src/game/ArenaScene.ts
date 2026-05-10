@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import type { RenderBox, RenderPlayer, RenderWorldState } from './renderState'
 
 export class ArenaScene {
+  private static readonly ARENA_HALF_SIZE = 12
   private renderer: THREE.WebGLRenderer
   private scene: THREE.Scene
   private camera: THREE.PerspectiveCamera
@@ -17,8 +18,8 @@ export class ArenaScene {
     this.scene = new THREE.Scene()
     this.scene.fog = new THREE.Fog(0xe9eef2, 24, 46)
 
-    this.camera = new THREE.PerspectiveCamera(48, 1, 0.1, 100)
-    this.camera.position.set(8, 8, 10)
+    this.camera = new THREE.PerspectiveCamera(48, 1, 0.1, 120)
+    this.camera.position.set(15, 16, 18)
     this.camera.lookAt(0, 0, 0)
 
     this.buildArena()
@@ -129,16 +130,19 @@ export class ArenaScene {
     keyLight.position.set(6, 10, 8)
     this.scene.add(keyLight)
 
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(12, 0.24, 12), new THREE.MeshStandardMaterial({ color: 0xf7f9fb, roughness: 0.82 }))
+    const arenaSize = ArenaScene.ARENA_HALF_SIZE * 2
+    const wallSpan = arenaSize + 0.4
+
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(arenaSize, 0.24, arenaSize), new THREE.MeshStandardMaterial({ color: 0xf7f9fb, roughness: 0.82 }))
     floor.position.y = -0.12
     this.scene.add(floor)
 
-    this.addWall(0, 0.55, -6, 12.4, 1.1, 0.24)
-    this.addWall(0, 0.55, 6, 12.4, 1.1, 0.24)
-    this.addWall(-6, 0.55, 0, 0.24, 1.1, 12.4)
-    this.addWall(6, 0.55, 0, 0.24, 1.1, 12.4)
+    this.addWall(0, 0.55, -ArenaScene.ARENA_HALF_SIZE, wallSpan, 1.1, 0.24)
+    this.addWall(0, 0.55, ArenaScene.ARENA_HALF_SIZE, wallSpan, 1.1, 0.24)
+    this.addWall(-ArenaScene.ARENA_HALF_SIZE, 0.55, 0, 0.24, 1.1, wallSpan)
+    this.addWall(ArenaScene.ARENA_HALF_SIZE, 0.55, 0, 0.24, 1.1, wallSpan)
 
-    this.addGoalZone(3.8, 0.01, 3.8)
+    this.addGoalZone(8.5, 0.01, 8.5)
   }
 
   private addWall(x: number, y: number, z: number, width: number, height: number, depth: number): void {

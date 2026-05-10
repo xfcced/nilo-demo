@@ -3,15 +3,16 @@ use super::room::PlayerInput;
 use rapier3d::prelude::*;
 use std::collections::HashMap;
 
-const ARENA_HALF_SIZE: f32 = 6.0;
+const ARENA_HALF_SIZE: f32 = 12.0;
 const WALL_HEIGHT: f32 = 1.1;
 const WALL_THICKNESS: f32 = 0.24;
 const PLAYER_RADIUS: f32 = 0.42;
 const PLAYER_CENTER_Y: f32 = 0.34;
-const PLAYER_MAX_SPEED: f32 = 7.0;
-const PLAYER_ACCELERATION: f32 = 64.0;
-const PLAYER_DECELERATION: f32 = 34.0;
+const PLAYER_MAX_SPEED: f32 = 10.0;
+const PLAYER_ACCELERATION: f32 = 92.0;
+const PLAYER_DECELERATION: f32 = 56.0;
 const BOX_HALF_EXTENT: f32 = 0.45;
+const BOX_DENSITY: f32 = 0.16;
 
 pub struct World {
     pipeline: PhysicsPipeline,
@@ -245,27 +246,36 @@ impl World {
     }
 
     fn spawn_boxes(&mut self) {
-        let boxes = [(1, -2.8, -1.4), (2, 1.8, -0.2), (3, 0.2, 2.4)];
+        let grid_size = 10;
+        let spacing = 1.15;
+        let start = -((grid_size - 1) as f32 * spacing) / 2.0;
+        let center_z = 1.4;
+        let mut id = 1;
 
-        for (id, x, z) in boxes {
-            let body = RigidBodyBuilder::dynamic()
-                .translation(Vector::new(x, BOX_HALF_EXTENT, z))
-                .linear_damping(0.5)
-                .angular_damping(0.7)
-                .build();
-            let body_handle = self.bodies.insert(body);
-            let collider =
-                ColliderBuilder::cuboid(BOX_HALF_EXTENT, BOX_HALF_EXTENT, BOX_HALF_EXTENT)
-                    .friction(0.9)
-                    .restitution(0.0)
-                    .density(0.45)
+        for row in 0..grid_size {
+            for col in 0..grid_size {
+                let x = start + col as f32 * spacing;
+                let z = center_z + start + row as f32 * spacing;
+                let body = RigidBodyBuilder::dynamic()
+                    .translation(Vector::new(x, BOX_HALF_EXTENT, z))
+                    .linear_damping(0.25)
+                    .angular_damping(0.35)
                     .build();
-            self.colliders
-                .insert_with_parent(collider, body_handle, &mut self.bodies);
-            self.boxes.push(BoxBody {
-                id,
-                body: body_handle,
-            });
+                let body_handle = self.bodies.insert(body);
+                let collider =
+                    ColliderBuilder::cuboid(BOX_HALF_EXTENT, BOX_HALF_EXTENT, BOX_HALF_EXTENT)
+                        .friction(0.55)
+                        .restitution(0.05)
+                        .density(BOX_DENSITY)
+                        .build();
+                self.colliders
+                    .insert_with_parent(collider, body_handle, &mut self.bodies);
+                self.boxes.push(BoxBody {
+                    id,
+                    body: body_handle,
+                });
+                id += 1;
+            }
         }
     }
 }
@@ -376,9 +386,8 @@ mod tests {
         let world = World::new();
         let snapshots = world.box_snapshots();
 
-        assert_eq!(snapshots.len(), 3);
+        assert_eq!(snapshots.len(), 100);
         assert_eq!(snapshots[0].box_id, 1);
-        assert_eq!(snapshots[1].box_id, 2);
-        assert_eq!(snapshots[2].box_id, 3);
+        assert_eq!(snapshots[99].box_id, 100);
     }
 }

@@ -130,9 +130,7 @@ async fn handle_message_stream(
         match message {
             ClientMessage::Join => {
                 welcomed = true;
-                let _ = sender.send(ServerMessage::Welcome {
-                    player_id,
-                });
+                let _ = sender.send(ServerMessage::Welcome { player_id });
             }
             ClientMessage::Ping { ping_seq } => {
                 if !welcomed {
@@ -142,9 +140,7 @@ async fn handle_message_stream(
                     continue;
                 }
 
-                let _ = sender.send(ServerMessage::Pong {
-                    ping_seq,
-                });
+                let _ = sender.send(ServerMessage::Pong { ping_seq });
             }
             ClientMessage::Input {
                 seq,
