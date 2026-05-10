@@ -1,9 +1,9 @@
-export type ClientMessage = { type: 'join' } | { type: 'ping'; clientTime: number } | { type: 'input'; seq: number; up: boolean; down: boolean; left: boolean; right: boolean }
+export type ClientMessage = { type: 'join' } | { type: 'ping'; pingSeq: number } | { type: 'input'; seq: number; up: boolean; down: boolean; left: boolean; right: boolean }
 
 export type ServerMessage =
-  | { type: 'welcome'; playerId: number; serverTime: number }
-  | { type: 'pong'; clientTime: number; serverTime: number }
-  | { type: 'state'; serverTime: number; players: PlayerSnapshot[]; boxes: BoxSnapshot[] }
+  | { type: 'welcome'; playerId: number }
+  | { type: 'pong'; pingSeq: number }
+  | { type: 'state'; serverTick: number; players: PlayerSnapshot[]; boxes: BoxSnapshot[] }
   | { type: 'error'; message: string }
 
 export type PlayerSnapshot = {
@@ -44,15 +44,21 @@ function isServerMessage(value: unknown): value is ServerMessage {
   const message = value as Partial<ServerMessage>
 
   if (message.type === 'welcome') {
-    return typeof message.playerId === 'number' && typeof message.serverTime === 'number'
+    return typeof message.playerId === 'number'
   }
 
   if (message.type === 'pong') {
-    return typeof message.clientTime === 'number' && typeof message.serverTime === 'number'
+    return typeof message.pingSeq === 'number'
   }
 
   if (message.type === 'state') {
-    return typeof message.serverTime === 'number' && Array.isArray(message.players) && message.players.every(isPlayerSnapshot) && Array.isArray(message.boxes) && message.boxes.every(isBoxSnapshot)
+    return (
+      typeof message.serverTick === 'number' &&
+      Array.isArray(message.players) &&
+      message.players.every(isPlayerSnapshot) &&
+      Array.isArray(message.boxes) &&
+      message.boxes.every(isBoxSnapshot)
+    )
   }
 
   if (message.type === 'error') {

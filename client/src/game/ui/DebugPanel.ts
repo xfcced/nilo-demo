@@ -5,7 +5,7 @@ type DebugPanelElements = {
   playerIdValue: HTMLElement
   rttValue: HTMLElement
   fpsValue: HTMLElement
-  serverTimeValue: HTMLElement
+  serverTickValue: HTMLElement
   log: HTMLPreElement
 }
 
@@ -18,7 +18,7 @@ export class DebugPanel {
       playerIdValue: getElement('playerIdValue'),
       rttValue: getElement('rttValue'),
       fpsValue: getElement('fpsValue'),
-      serverTimeValue: getElement('serverTimeValue'),
+      serverTickValue: getElement('serverTickValue'),
       log: getElement('log'),
     }
   }
@@ -40,9 +40,8 @@ export class DebugPanel {
     this.elements.fpsValue.textContent = fps === null ? '-' : `${Math.round(fps)}`
   }
 
-  setServerTime(serverTime: number | null): void {
-    this.elements.serverTimeValue.textContent =
-      serverTime === null ? '-' : new Date(serverTime).toLocaleTimeString()
+  setServerTick(serverTick: number | null): void {
+    this.elements.serverTickValue.textContent = serverTick === null ? '-' : String(serverTick)
   }
 
   log(message: string): void {

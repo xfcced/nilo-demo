@@ -5,8 +5,8 @@ use serde::{Deserialize, Serialize};
 pub enum ClientMessage {
     Join,
     Ping {
-        #[serde(rename = "clientTime")]
-        client_time: f64,
+        #[serde(rename = "pingSeq")]
+        ping_seq: u64,
     },
     Input {
         seq: u64,
@@ -23,18 +23,14 @@ pub enum ServerMessage {
     Welcome {
         #[serde(rename = "playerId")]
         player_id: u64,
-        #[serde(rename = "serverTime")]
-        server_time: f64,
     },
     Pong {
-        #[serde(rename = "clientTime")]
-        client_time: f64,
-        #[serde(rename = "serverTime")]
-        server_time: f64,
+        #[serde(rename = "pingSeq")]
+        ping_seq: u64,
     },
     State {
-        #[serde(rename = "serverTime")]
-        server_time: f64,
+        #[serde(rename = "serverTick")]
+        server_tick: u64,
         players: Vec<PlayerSnapshot>,
         boxes: Vec<BoxSnapshot>,
     },

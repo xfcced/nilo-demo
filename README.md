@@ -10,10 +10,11 @@ This phase establishes the minimum server-authoritative multiplayer physics demo
 - Rapier-backed server-authoritative player movement
 - dynamic server-owned physics boxes included in state snapshots
 - world state broadcast back to all connected players
+- tick-based snapshot interpolation for remote players and boxes
 - Fixed Three.js arena scene
-- Debug panel for connection state, player id, RTT, server time, and transport
+- Debug panel for connection state, player id, RTT, FPS, server tick, and transport
 
-No client prediction, interpolation, lobby, chat, datagram sync, goal scoring, client box rendering, or multi-scene abstraction is included yet.
+No client prediction, lobby, chat, datagram sync, goal scoring, or multi-scene abstraction is included yet.
 
 ## Run The Server
 
@@ -74,9 +75,9 @@ Click `Connect`. A successful connection shows:
 - `Connection: connected`
 - assigned `Player ID`
 - RTT updated once per second
-- server time from `Pong`
+- latest `serverTick` from world state snapshots
 
-Use `WASD` or arrow keys to move. Movement is calculated on the server and returned through `state` messages.
+Use `WASD` or arrow keys to move. Movement is calculated on the server and returned through `state` messages. Remote players and boxes are rendered through a client-side interpolation buffer; the local player still uses the latest authoritative state.
 
 ## Current Message Protocol
 
@@ -85,7 +86,7 @@ Client messages are newline-delimited JSON over one reliable bidirectional strea
 ```ts
 type ClientMessage =
   | { type: "join" }
-  | { type: "ping"; clientTime: number }
+  | { type: "ping"; pingSeq: number }
   | { type: "input"; seq: number; up: boolean; down: boolean; left: boolean; right: boolean }
 ```
 
@@ -93,15 +94,15 @@ Server messages:
 
 ```ts
 type ServerMessage =
-  | { type: "welcome"; playerId: number; serverTime: number }
-  | { type: "pong"; clientTime: number; serverTime: number }
+  | { type: "welcome"; playerId: number }
+  | { type: "pong"; pingSeq: number }
   | {
       type: "state";
-      serverTime: number;
+      serverTick: number;
       players: Array<{ playerId: number; x: number; y: number; z: number }>;
       boxes: Array<{ boxId: number; x: number; y: number; z: number; qx: number; qy: number; qz: number; qw: number }>;
     }
   | { type: "error"; message: string }
 ```
 
-This is intentionally simple for Phase 2. The protocol can move high-frequency input/state to datagrams or binary messages once the reliable stream foundation is stable.
+`serverTick` is the interpolation timeline. Ping RTT is measured entirely on the client by matching `ping.pingSeq` to `pong.pingSeq`. The protocol can move high-frequency input/state to datagrams or binary messages once the reliable stream foundation is stable.

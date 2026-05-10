@@ -17,6 +17,7 @@ pub struct Room {
 struct RoomState {
     players: HashMap<u64, Player>,
     world: World,
+    server_tick: u64,
 }
 
 #[derive(Debug)]
@@ -32,6 +33,12 @@ pub struct PlayerInput {
     pub down: bool,
     pub left: bool,
     pub right: bool,
+}
+
+pub struct RoomSnapshot {
+    pub server_tick: u64,
+    pub players: Vec<PlayerSnapshot>,
+    pub boxes: Vec<BoxSnapshot>,
 }
 
 impl Room {
@@ -93,22 +100,16 @@ impl Room {
         }
 
         state.world.step(delta_seconds);
+        state.server_tick += 1;
     }
 
-    pub fn player_snapshots(&self) -> Vec<PlayerSnapshot> {
-        self.state
-            .lock()
-            .expect("room state mutex poisoned")
-            .world
-            .player_snapshots()
-    }
-
-    pub fn box_snapshots(&self) -> Vec<BoxSnapshot> {
-        self.state
-            .lock()
-            .expect("room state mutex poisoned")
-            .world
-            .box_snapshots()
+    pub fn snapshot(&self) -> RoomSnapshot {
+        let state = self.state.lock().expect("room state mutex poisoned");
+        RoomSnapshot {
+            server_tick: state.server_tick,
+            players: state.world.player_snapshots(),
+            boxes: state.world.box_snapshots(),
+        }
     }
 
     pub fn outbound_senders(&self) -> Vec<OutboundSender> {

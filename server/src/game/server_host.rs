@@ -5,14 +5,14 @@ use crate::net::webtransport_server::WebTransportServer;
 use anyhow::{Context, Result};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::time::{self, Instant};
 use tracing::{error, info};
 use wtransport::{Connection, Identity, RecvStream};
 
 const WEBTRANSPORT_PATH: &str = "/webtransport";
-const TICK_RATE: f32 = 60.0;
+const TICK_RATE: f32 = 30.0;
 const MAX_FRAME_TIME: Duration = Duration::from_millis(250);
 const MAX_TICKS_PER_FRAME: usize = 8;
 
@@ -132,10 +132,9 @@ async fn handle_message_stream(
                 welcomed = true;
                 let _ = sender.send(ServerMessage::Welcome {
                     player_id,
-                    server_time: server_time_ms(),
                 });
             }
-            ClientMessage::Ping { client_time } => {
+            ClientMessage::Ping { ping_seq } => {
                 if !welcomed {
                     let _ = sender.send(ServerMessage::Error {
                         message: "send Join before Ping".to_string(),
@@ -144,8 +143,7 @@ async fn handle_message_stream(
                 }
 
                 let _ = sender.send(ServerMessage::Pong {
-                    client_time,
-                    server_time: server_time_ms(),
+                    ping_seq,
                 });
             }
             ClientMessage::Input {
@@ -180,14 +178,6 @@ async fn handle_message_stream(
     Ok(())
 }
 
-fn server_time_ms() -> f64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs_f64()
-        * 1000.0
-}
-
 async fn run_room_tick(room: Arc<Room>) {
     let tick_duration = Duration::from_secs_f32(1.0 / TICK_RATE);
     let mut previous_time = Instant::now();
@@ -202,7 +192,7 @@ async fn run_room_tick(room: Arc<Room>) {
         let mut ticks_this_frame = 0;
         while accumulator >= tick_duration && ticks_this_frame < MAX_TICKS_PER_FRAME {
             room.tick(1.0 / TICK_RATE);
-            broadcast_room_state(&room, server_time_ms());
+            broadcast_room_state(&room);
 
             accumulator -= tick_duration;
             ticks_this_frame += 1;
@@ -220,11 +210,12 @@ async fn run_room_tick(room: Arc<Room>) {
     }
 }
 
-fn broadcast_room_state(room: &Room, server_time: f64) {
+fn broadcast_room_state(room: &Room) {
+    let snapshot = room.snapshot();
     let message = ServerMessage::State {
-        server_time,
-        players: room.player_snapshots(),
-        boxes: room.box_snapshots(),
+        server_tick: snapshot.server_tick,
+        players: snapshot.players,
+        boxes: snapshot.boxes,
     };
 
     for sender in room.outbound_senders() {

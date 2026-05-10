@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { BoxSnapshot, PlayerSnapshot } from './net/protocol'
+import type { RenderBox, RenderPlayer, RenderWorldState } from './renderState'
 
 export class ArenaScene {
   private renderer: THREE.WebGLRenderer
@@ -28,7 +28,7 @@ export class ArenaScene {
   }
 
   update(_deltaSeconds: number): void {
-    // 当前 demo 的位置由服务端 state 驱动，这里先保留客户端场景更新入口。
+    // Scene animation hooks belong here; network interpolation is handled outside this renderer.
   }
 
   render(): void {
@@ -48,21 +48,26 @@ export class ArenaScene {
     }
   }
 
-  setPlayers(snapshots: PlayerSnapshot[]): void {
+  applyRenderState(state: RenderWorldState): void {
+    this.setPlayers(state.players)
+    this.setBoxes(state.boxes)
+  }
+
+  private setPlayers(players: RenderPlayer[]): void {
     const activePlayerIds = new Set<number>()
 
-    for (const snapshot of snapshots) {
-      activePlayerIds.add(snapshot.playerId)
+    for (const playerState of players) {
+      activePlayerIds.add(playerState.playerId)
 
-      let player = this.players.get(snapshot.playerId)
+      let player = this.players.get(playerState.playerId)
       if (!player) {
-        player = this.createPlayer(snapshot.playerId === this.localPlayerId)
-        this.players.set(snapshot.playerId, player)
+        player = this.createPlayer(playerState.isLocal)
+        this.players.set(playerState.playerId, player)
         this.scene.add(player)
       }
 
-      player.position.set(snapshot.x, snapshot.y, snapshot.z)
-      this.setPlayerMaterial(player, snapshot.playerId === this.localPlayerId)
+      player.position.set(playerState.x, playerState.y, playerState.z)
+      this.setPlayerMaterial(player, playerState.isLocal)
     }
 
     for (const [playerId, player] of this.players) {
@@ -82,21 +87,21 @@ export class ArenaScene {
     this.players.clear()
   }
 
-  setBoxes(snapshots: BoxSnapshot[]): void {
+  private setBoxes(boxes: RenderBox[]): void {
     const activeBoxIds = new Set<number>()
 
-    for (const snapshot of snapshots) {
-      activeBoxIds.add(snapshot.boxId)
+    for (const boxState of boxes) {
+      activeBoxIds.add(boxState.boxId)
 
-      let box = this.boxes.get(snapshot.boxId)
+      let box = this.boxes.get(boxState.boxId)
       if (!box) {
-        box = this.createBox(snapshot.boxId)
-        this.boxes.set(snapshot.boxId, box)
+        box = this.createBox(boxState.boxId)
+        this.boxes.set(boxState.boxId, box)
         this.scene.add(box)
       }
 
-      box.position.set(snapshot.x, snapshot.y, snapshot.z)
-      box.quaternion.set(snapshot.qx, snapshot.qy, snapshot.qz, snapshot.qw)
+      box.position.set(boxState.x, boxState.y, boxState.z)
+      box.quaternion.set(boxState.qx, boxState.qy, boxState.qz, boxState.qw)
     }
 
     for (const [boxId, box] of this.boxes) {

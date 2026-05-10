@@ -3,6 +3,7 @@ import { KeyboardInput } from '../engine/KeyboardInput'
 import { type AppElements, getAppElements } from './appElements'
 import { ArenaScene } from './ArenaScene'
 import { GameConnection } from './net/GameConnection'
+import { SnapshotInterpolator } from './sync/SnapshotInterpolator'
 import { DebugPanel } from './ui/DebugPanel'
 
 const FIXED_STEP_MS = 1000 / 60
@@ -15,12 +16,15 @@ export class GameClientApp {
   private arena: ArenaScene
   private input = new KeyboardInput()
   private serverConnection = new GameConnection()
+  private interpolator = new SnapshotInterpolator()
   private gameLoop: GameLoop
 
   private inputSeq = 0
   private localPlayerId: number | null = null
   private connected = false
   private pingElapsedMs = PING_SEND_MS
+  private pingSeq = 0
+  private pendingPings = new Map<number, number>()
   private fpsElapsedMs = 0
   private fpsFrameCount = 0
 
@@ -48,22 +52,24 @@ export class GameClientApp {
         this.localPlayerId = message.playerId
         this.arena.setLocalPlayerId(message.playerId)
         this.debugPanel.setPlayerId(message.playerId)
-        this.debugPanel.setServerTime(message.serverTime)
         this.debugPanel.log(`joined as player ${message.playerId}`)
         return
       }
 
       if (message.type === 'pong') {
-        const now = performance.now()
-        this.debugPanel.setRtt(now - message.clientTime)
-        this.debugPanel.setServerTime(message.serverTime)
+        const sentAt = this.pendingPings.get(message.pingSeq)
+        if (sentAt !== undefined) {
+          this.pendingPings.delete(message.pingSeq)
+          this.debugPanel.setRtt(performance.now() - sentAt)
+        } else {
+          this.debugPanel.log(`ignored pong for unknown ping ${message.pingSeq}`)
+        }
         return
       }
 
       if (message.type === 'state') {
-        this.debugPanel.setServerTime(message.serverTime)
-        this.arena.setPlayers(message.players)
-        this.arena.setBoxes(message.boxes)
+        this.debugPanel.setServerTick(message.serverTick)
+        this.interpolator.pushSnapshot(message, performance.now())
         return
       }
 
@@ -120,7 +126,6 @@ export class GameClientApp {
     this.debugPanel.setConnection('disconnected')
     this.debugPanel.setPlayerId(null)
     this.debugPanel.setRtt(null)
-    this.debugPanel.setServerTime(null)
     this.setButtons(false)
   }
 
@@ -144,6 +149,7 @@ export class GameClientApp {
 
   private render(frameMs: number): void {
     this.updateFps(frameMs)
+    this.arena.applyRenderState(this.interpolator.sample(performance.now(), this.localPlayerId))
     this.arena.render()
   }
 
@@ -161,7 +167,12 @@ export class GameClientApp {
   }
 
   private sendPing(): void {
-    void this.serverConnection.send({ type: 'ping', clientTime: performance.now() }).catch((error: unknown) => {
+    this.pingSeq += 1
+    const pingSeq = this.pingSeq
+    this.pendingPings.set(pingSeq, performance.now())
+
+    void this.serverConnection.send({ type: 'ping', pingSeq }).catch((error: unknown) => {
+      this.pendingPings.delete(pingSeq)
       if (this.connected) {
         this.debugPanel.log(`ping failed: ${String(error)}`)
       }
@@ -189,10 +200,14 @@ export class GameClientApp {
     this.connected = false
     this.localPlayerId = null
     this.inputSeq = 0
+    this.pingSeq = 0
+    this.pendingPings.clear()
     this.pingElapsedMs = PING_SEND_MS
     this.arena.setLocalPlayerId(null)
     this.arena.clearPlayers()
     this.arena.clearBoxes()
+    this.interpolator.reset()
+    this.debugPanel.setServerTick(null)
   }
 
   private setButtons(connected: boolean): void {
