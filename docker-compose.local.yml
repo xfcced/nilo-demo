@@ -10,8 +10,7 @@ services:
       - "80:80"
       - "443:443"
     volumes:
-      - /etc/letsencrypt/live/nilo.luchang.xyz/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
-      - /etc/letsencrypt/live/nilo.luchang.xyz/privkey.pem:/etc/nginx/certs/privkey.pem:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     restart: unless-stopped
 
   server:
@@ -20,11 +19,10 @@ services:
       dockerfile: server/Dockerfile
     environment:
       PORT: "4433"
-      TLS_CERT_FILE: /certs/fullchain.pem
-      TLS_KEY_FILE: /certs/privkey.pem
+      TLS_CERT_FILE: /etc/letsencrypt/live/wt.luchang.xyz/fullchain.pem
+      TLS_KEY_FILE: /etc/letsencrypt/live/wt.luchang.xyz/privkey.pem
     volumes:
-      - /etc/letsencrypt/live/wt.luchang.xyz/fullchain.pem:/certs/fullchain.pem:ro
-      - /etc/letsencrypt/live/wt.luchang.xyz/privkey.pem:/certs/privkey.pem:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     ports:
       - "443:4433/udp"
     restart: unless-stopped
