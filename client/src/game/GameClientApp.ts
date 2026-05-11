@@ -1,6 +1,6 @@
 import { GameLoop } from '../engine/GameLoop'
 import { KeyboardInput } from '../engine/KeyboardInput'
-import type { TransportCounters } from '../engine/WebTransportLineClient'
+import type { TransportCounters } from '../engine/WebTransportClient'
 import { type AppElements, getAppElements } from './appElements'
 import { ArenaScene } from './ArenaScene'
 import { GameConnection } from './net/GameConnection'

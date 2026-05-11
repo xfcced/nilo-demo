@@ -1,15 +1,14 @@
 use super::protocol::{ClientMessage, ServerMessage};
-use super::room::{OutboundSender, PlayerInput, Room};
-use crate::net::line_stream::{outbound_line_channel, write_lines, LineReader};
-use crate::net::webtransport_server::WebTransportServer;
-use anyhow::{Context, Result};
+use super::room::{PlayerInput, Room};
+use crate::game_net::{ConnectionId, GameNetEvent, GameNetEventReceiver, GameNetworkHost};
+use anyhow::Result;
+use std::collections::HashSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::mpsc;
 use tokio::time::{self, Instant};
 use tracing::{error, info};
-use wtransport::{Connection, Identity, RecvStream};
+use wtransport::Identity;
 
 const WEBTRANSPORT_PATH: &str = "/webtransport";
 const TICK_RATE: f32 = 30.0;
@@ -17,164 +16,132 @@ const MAX_FRAME_TIME: Duration = Duration::from_millis(250);
 const MAX_TICKS_PER_FRAME: usize = 8;
 
 pub struct ServerHost {
-    transport: WebTransportServer,
+    network: GameNetworkHost,
     room: Arc<Room>,
 }
 
 impl ServerHost {
     pub fn new(port: u16, identity: Identity, room: Arc<Room>) -> Result<Self> {
-        let transport = WebTransportServer::new(port, identity, WEBTRANSPORT_PATH)?;
-        Ok(Self { transport, room })
+        let network = GameNetworkHost::new(port, identity, WEBTRANSPORT_PATH)?;
+        Ok(Self { network, room })
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr> {
-        self.transport.local_addr()
+        self.network.local_addr()
     }
 
     pub async fn serve(self) -> Result<()> {
+        let (event_sender, event_receiver) = GameNetworkHost::event_queue();
+
         let tick_room = Arc::clone(&self.room);
+        let tick_network = self.network.clone();
         tokio::spawn(async move {
-            run_room_tick(tick_room).await;
+            run_room_tick(tick_room, tick_network).await;
         });
 
-        let room = Arc::clone(&self.room);
-        self.transport
-            .serve(move |connection| {
-                let room = Arc::clone(&room);
-                async move { handle_connection(connection, room).await }
-            })
-            .await
+        let event_room = Arc::clone(&self.room);
+        let event_network = self.network.clone();
+        tokio::spawn(async move {
+            handle_net_events(event_receiver, event_room, event_network).await;
+        });
+
+        self.network.serve(event_sender).await
     }
 }
 
-async fn handle_connection(connection: Connection, room: Arc<Room>) -> Result<()> {
-    loop {
-        let (send_stream, recv_stream) = connection
-            .accept_bi()
-            .await
-            .context("failed to accept bidirectional stream")?;
-
-        let (line_sender, line_receiver) = outbound_line_channel();
-        let (message_sender, message_receiver) = mpsc::unbounded_channel();
-        let player_id = room.add_player(message_sender.clone());
-        let remote = connection.remote_address();
-        info!(player_id, %remote, "assigned player id");
-
-        tokio::spawn(async move {
-            if let Err(error) = write_lines(send_stream, line_receiver).await {
-                error!(player_id, ?error, "line write stream failed");
-            }
-        });
-
-        tokio::spawn(async move {
-            if let Err(error) = encode_messages(message_receiver, line_sender).await {
-                error!(player_id, ?error, "message encode stream failed");
-            }
-        });
-
-        let stream_room = Arc::clone(&room);
-        tokio::spawn(async move {
-            if let Err(error) = handle_message_stream(
-                player_id,
-                message_sender,
-                recv_stream,
-                Arc::clone(&stream_room),
-            )
-            .await
-            {
-                error!(player_id, ?error, "message stream failed");
-            }
-
-            stream_room.remove_player(player_id);
-            info!(player_id, "removed player");
-        });
-    }
-}
-
-async fn encode_messages(
-    mut receiver: mpsc::UnboundedReceiver<ServerMessage>,
-    line_sender: mpsc::UnboundedSender<String>,
-) -> Result<()> {
-    while let Some(message) = receiver.recv().await {
-        let payload = serde_json::to_string(&message).context("failed to encode server message")?;
-        let _ = line_sender.send(payload);
-    }
-
-    Ok(())
-}
-
-async fn handle_message_stream(
-    player_id: u64,
-    sender: mpsc::UnboundedSender<ServerMessage>,
-    recv_stream: RecvStream,
+async fn handle_net_events(
+    mut event_receiver: GameNetEventReceiver,
     room: Arc<Room>,
-) -> Result<()> {
-    let mut reader = LineReader::new(recv_stream);
-    let mut welcomed = false;
+    network: GameNetworkHost,
+) {
+    let mut joined_connections = HashSet::new();
 
-    while let Some(raw) = reader.read_line().await? {
-        if raw.is_empty() {
-            continue;
-        }
-
-        let message = match serde_json::from_str::<ClientMessage>(&raw) {
-            Ok(message) => message,
-            Err(error) => {
-                let _ = sender.send(ServerMessage::Error {
-                    message: format!("invalid message: {error}"),
-                });
-                continue;
-            }
-        };
-
-        match message {
-            ClientMessage::Join => {
-                welcomed = true;
-                let _ = sender.send(ServerMessage::Welcome { player_id });
-            }
-            ClientMessage::Ping { ping_seq } => {
-                if !welcomed {
-                    let _ = sender.send(ServerMessage::Error {
-                        message: "send Join before Ping".to_string(),
-                    });
-                    continue;
-                }
-
-                let _ = sender.send(ServerMessage::Pong { ping_seq });
-            }
-            ClientMessage::Input {
-                seq,
-                up,
-                down,
-                left,
-                right,
+    while let Some(event) = event_receiver.recv().await {
+        match event {
+            GameNetEvent::Message {
+                connection_id,
+                message,
             } => {
-                if !welcomed {
-                    let _ = sender.send(ServerMessage::Error {
-                        message: "send Join before Input".to_string(),
-                    });
-                    continue;
-                }
-
-                room.update_input(
-                    player_id,
-                    seq,
-                    PlayerInput {
-                        up,
-                        down,
-                        left,
-                        right,
-                    },
+                handle_client_message(
+                    connection_id,
+                    message,
+                    &room,
+                    &network,
+                    &mut joined_connections,
                 );
             }
+            GameNetEvent::Disconnected { connection_id } => {
+                joined_connections.remove(&connection_id);
+                room.remove_player(connection_id.0);
+                info!(player_id = connection_id.0, "removed player");
+            }
         }
     }
-
-    info!(player_id, "client message stream closed");
-    Ok(())
 }
 
-async fn run_room_tick(room: Arc<Room>) {
+fn handle_client_message(
+    connection_id: ConnectionId,
+    message: ClientMessage,
+    room: &Room,
+    network: &GameNetworkHost,
+    joined_connections: &mut HashSet<ConnectionId>,
+) {
+    let player_id = connection_id.0;
+
+    match message {
+        ClientMessage::Join => {
+            joined_connections.insert(connection_id);
+            room.add_player(player_id);
+            info!(player_id, "assigned player id");
+            send_message(network, connection_id, ServerMessage::Welcome { player_id });
+        }
+        ClientMessage::Ping { ping_seq } => {
+            if !joined_connections.contains(&connection_id) {
+                send_message(
+                    network,
+                    connection_id,
+                    ServerMessage::Error {
+                        message: "send Join before Ping".to_string(),
+                    },
+                );
+                return;
+            }
+
+            send_message(network, connection_id, ServerMessage::Pong { ping_seq });
+        }
+        ClientMessage::Input {
+            seq,
+            up,
+            down,
+            left,
+            right,
+        } => {
+            if !joined_connections.contains(&connection_id) {
+                send_message(
+                    network,
+                    connection_id,
+                    ServerMessage::Error {
+                        message: "send Join before Input".to_string(),
+                    },
+                );
+                return;
+            }
+
+            room.update_input(
+                player_id,
+                seq,
+                PlayerInput {
+                    up,
+                    down,
+                    left,
+                    right,
+                },
+            );
+        }
+    }
+}
+
+async fn run_room_tick(room: Arc<Room>, network: GameNetworkHost) {
     let tick_duration = Duration::from_secs_f32(1.0 / TICK_RATE);
     let mut previous_time = Instant::now();
     let mut accumulator = Duration::ZERO;
@@ -188,7 +155,7 @@ async fn run_room_tick(room: Arc<Room>) {
         let mut ticks_this_frame = 0;
         while accumulator >= tick_duration && ticks_this_frame < MAX_TICKS_PER_FRAME {
             room.tick(1.0 / TICK_RATE);
-            broadcast_room_state(&room);
+            broadcast_room_state(&room, &network);
 
             accumulator -= tick_duration;
             ticks_this_frame += 1;
@@ -206,7 +173,7 @@ async fn run_room_tick(room: Arc<Room>) {
     }
 }
 
-fn broadcast_room_state(room: &Room) {
+fn broadcast_room_state(room: &Room, network: &GameNetworkHost) {
     let snapshot = room.snapshot();
     let message = ServerMessage::State {
         server_tick: snapshot.server_tick,
@@ -214,11 +181,17 @@ fn broadcast_room_state(room: &Room) {
         boxes: snapshot.boxes,
     };
 
-    for sender in room.outbound_senders() {
-        send_message(&sender, message.clone());
+    for player_id in room.player_ids() {
+        send_message(network, ConnectionId(player_id), message.clone());
     }
 }
 
-fn send_message(sender: &OutboundSender, message: ServerMessage) {
-    let _ = sender.send(message);
+fn send_message(network: &GameNetworkHost, connection_id: ConnectionId, message: ServerMessage) {
+    if let Err(error) = network.send_message(connection_id, message) {
+        error!(
+            connection_id = connection_id.0,
+            ?error,
+            "failed to send server message"
+        );
+    }
 }

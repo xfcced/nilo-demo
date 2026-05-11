@@ -4,7 +4,8 @@ This phase establishes the minimum server-authoritative multiplayer physics demo
 
 - Rust WebTransport server
 - Browser WebTransport client
-- `Join -> Welcome`
+- named reliable WebTransport channels with length-prefixed frames
+- `Join -> Welcome` over the `control` channel
 - `Ping -> Pong` RTT measurement
 - keyboard input sent from the browser
 - Rapier-backed server-authoritative player movement
@@ -14,7 +15,7 @@ This phase establishes the minimum server-authoritative multiplayer physics demo
 - Fixed Three.js arena scene
 - Debug panel for connection state, player id, RTT, FPS, server tick, and transport
 
-No client prediction, lobby, chat, datagram sync, goal scoring, or multi-scene abstraction is included yet.
+No client prediction, lobby, chat, gameplay datagram sync, goal scoring, or multi-scene abstraction is included yet.
 
 ## Run The Server
 
@@ -81,7 +82,7 @@ Use `WASD` or arrow keys to move. Movement is calculated on the server and retur
 
 ## Current Message Protocol
 
-Client messages are newline-delimited JSON over one reliable bidirectional stream:
+The client opens a named reliable `control` channel over a bidirectional WebTransport stream. Each stream starts with a length-prefixed UTF-8 channel-name frame, then carries length-prefixed payload frames. The current gameplay payloads are still JSON:
 
 ```ts
 type ClientMessage =
@@ -105,4 +106,4 @@ type ServerMessage =
   | { type: "error"; message: string }
 ```
 
-`serverTick` is the interpolation timeline. Ping RTT is measured entirely on the client by matching `ping.pingSeq` to `pong.pingSeq`. The protocol can move high-frequency input/state to datagrams or binary messages once the reliable stream foundation is stable.
+`serverTick` is the interpolation timeline. Ping RTT is measured entirely on the client by matching `ping.pingSeq` to `pong.pingSeq`. The engine transport also exposes named reliable channels and datagram send/receive hooks; the current game protocol can move high-frequency input/state to datagrams or binary messages once the foundation is stable.

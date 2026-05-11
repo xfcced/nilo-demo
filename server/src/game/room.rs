@@ -1,15 +1,10 @@
-use super::protocol::{BoxSnapshot, PlayerSnapshot, ServerMessage};
+use super::protocol::{BoxSnapshot, PlayerSnapshot};
 use super::world::World;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
-use tokio::sync::mpsc;
-
-pub type OutboundSender = mpsc::UnboundedSender<ServerMessage>;
 
 #[derive(Default)]
 pub struct Room {
-    next_player_id: AtomicU64,
     state: Mutex<RoomState>,
 }
 
@@ -24,7 +19,6 @@ struct RoomState {
 struct Player {
     input: PlayerInput,
     last_input_seq: u64,
-    sender: OutboundSender,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -44,25 +38,19 @@ pub struct RoomSnapshot {
 impl Room {
     pub fn new() -> Self {
         Self {
-            next_player_id: AtomicU64::new(1),
             state: Mutex::new(RoomState::default()),
         }
     }
 
-    pub fn add_player(&self, sender: OutboundSender) -> u64 {
-        let player_id = self.next_player_id.fetch_add(1, Ordering::Relaxed);
-
+    pub fn add_player(&self, player_id: u64) {
         let player = Player {
             input: PlayerInput::default(),
             last_input_seq: 0,
-            sender,
         };
 
         let mut state = self.state.lock().expect("room state mutex poisoned");
         state.players.insert(player_id, player);
         state.world.spawn_player(player_id);
-
-        player_id
     }
 
     pub fn remove_player(&self, player_id: u64) {
@@ -112,13 +100,13 @@ impl Room {
         }
     }
 
-    pub fn outbound_senders(&self) -> Vec<OutboundSender> {
+    pub fn player_ids(&self) -> Vec<u64> {
         self.state
             .lock()
             .expect("room state mutex poisoned")
             .players
-            .values()
-            .map(|player| player.sender.clone())
+            .keys()
+            .copied()
             .collect()
     }
 }

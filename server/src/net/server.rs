@@ -7,12 +7,12 @@ use tracing::{error, info, warn};
 use wtransport::endpoint::IncomingSession;
 use wtransport::{Connection, Endpoint, Identity, ServerConfig};
 
-pub struct WebTransportServer {
+pub struct WebTransportListener {
     endpoint: Endpoint<wtransport::endpoint::endpoint_side::Server>,
     path: Arc<str>,
 }
 
-impl WebTransportServer {
+impl WebTransportListener {
     pub fn new(port: u16, identity: Identity, path: impl Into<Arc<str>>) -> Result<Self> {
         let config = ServerConfig::builder()
             .with_bind_default(port)

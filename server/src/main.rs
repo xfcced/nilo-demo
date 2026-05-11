@@ -1,4 +1,5 @@
 mod game;
+mod game_net;
 mod net;
 
 use anyhow::{Context, Result};
