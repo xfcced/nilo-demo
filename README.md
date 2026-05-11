@@ -112,11 +112,18 @@ Issue a certificate for the WebTransport domain. The default Compose file expect
 /etc/letsencrypt/live/wt.luchang.xyz/privkey.pem
 ```
 
-Deploy:
+The default `docker-compose.yml` uses GHCR images built by GitHub Actions:
 
 ```bash
 cd /opt/nilo-demo
-docker compose up -d --build
+docker compose pull
+docker compose up -d
+```
+
+For local server-side builds without GHCR:
+
+```bash
+docker compose -f docker-compose.local.yml up -d --build
 ```
 
 Useful checks:

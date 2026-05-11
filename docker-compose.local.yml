@@ -1,12 +1,19 @@
 services:
   client:
-    image: ghcr.io/xfcced/nilo-demo-client:latest
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+      args:
+        VITE_WEBTRANSPORT_URL: https://wt.luchang.xyz/webtransport
+        VITE_CERTIFICATE_HASH: ""
     ports:
       - "80:80"
     restart: unless-stopped
 
   server:
-    image: ghcr.io/xfcced/nilo-demo-server:latest
+    build:
+      context: .
+      dockerfile: server/Dockerfile
     environment:
       PORT: "4433"
       TLS_CERT_FILE: /certs/fullchain.pem
