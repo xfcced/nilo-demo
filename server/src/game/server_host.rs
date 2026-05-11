@@ -1,6 +1,7 @@
 use super::protocol::{ClientMessage, ServerMessage};
 use super::room::{PlayerInput, Room};
-use crate::game_net::{ConnectionId, GameNetEvent, GameNetEventReceiver, GameNetworkHost};
+use crate::game_net::host::{GameNetEvent, GameNetEventReceiver, GameNetworkHost};
+use crate::net::ConnectionId;
 use anyhow::Result;
 use std::collections::HashSet;
 use std::net::SocketAddr;
