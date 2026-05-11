@@ -1,5 +1,5 @@
 import { WebTransportClient, type TransportCounters } from '../../engine/WebTransportClient'
-import { decodeServerMessage, encodeClientMessage, type ClientMessage, type ServerMessage } from './protocol'
+import { decodeServerMessage, decodeStateDatagram, encodeClientMessage, encodeInputDatagram, type ClientMessage, type ServerMessage } from './protocol'
 
 type MessageHandler = (message: ServerMessage) => void
 type CloseHandler = (reason: string) => void
@@ -19,6 +19,7 @@ export class GameConnection {
 
   constructor() {
     this.transport.onReliableMessage(CONTROL_CHANNEL, (payload) => this.handleControlPayload(payload))
+    this.transport.onDatagram((payload) => this.handleDatagramPayload(payload))
     this.transport.onClose((reason) => {
       this.closeHandlers.forEach((handler) => handler(reason))
     })
@@ -34,6 +35,10 @@ export class GameConnection {
   }
 
   send(message: ClientMessage): Promise<void> {
+    if (message.type === 'input') {
+      return this.transport.sendDatagram(encodeInputDatagram(message))
+    }
+
     return this.transport.sendReliable(CONTROL_CHANNEL, this.encoder.encode(encodeClientMessage(message)))
   }
 
@@ -64,6 +69,15 @@ export class GameConnection {
     try {
       const line = this.decoder.decode(payload)
       const message = decodeServerMessage(line)
+      this.messageHandlers.forEach((handler) => handler(message))
+    } catch (error) {
+      this.emitError(error instanceof Error ? error : new Error(String(error)))
+    }
+  }
+
+  private handleDatagramPayload(payload: Uint8Array): void {
+    try {
+      const message = decodeStateDatagram(payload)
       this.messageHandlers.forEach((handler) => handler(message))
     } catch (error) {
       this.emitError(error instanceof Error ? error : new Error(String(error)))

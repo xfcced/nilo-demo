@@ -176,14 +176,15 @@ async fn run_room_tick(room: Arc<Room>, network: GameNetworkHost) {
 
 fn broadcast_room_state(room: &Room, network: &GameNetworkHost) {
     let snapshot = room.snapshot();
-    let message = ServerMessage::State {
-        server_tick: snapshot.server_tick,
-        players: snapshot.players,
-        boxes: snapshot.boxes,
-    };
 
     for player_id in room.player_ids() {
-        send_message(network, ConnectionId(player_id), message.clone());
+        if let Err(error) = network.send_state(ConnectionId(player_id), &snapshot) {
+            error!(
+                connection_id = player_id,
+                ?error,
+                "failed to send state datagram"
+            );
+        }
     }
 }
 

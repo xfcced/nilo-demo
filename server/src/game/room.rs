@@ -21,7 +21,7 @@ struct Player {
     last_input_seq: u64,
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PlayerInput {
     pub up: bool,
     pub down: bool,

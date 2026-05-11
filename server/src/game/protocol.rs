@@ -28,12 +28,6 @@ pub enum ServerMessage {
         #[serde(rename = "pingSeq")]
         ping_seq: u64,
     },
-    State {
-        #[serde(rename = "serverTick")]
-        server_tick: u64,
-        players: Vec<PlayerSnapshot>,
-        boxes: Vec<BoxSnapshot>,
-    },
     Error {
         message: String,
     },

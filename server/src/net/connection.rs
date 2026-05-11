@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tracing::{error, info};
 use wtransport::{Connection, RecvStream, SendStream};
@@ -35,6 +36,7 @@ pub struct RawBidirectionalStream {
 #[derive(Clone)]
 pub struct ConnectionManager {
     next_connection_id: Arc<AtomicU64>,
+    connections: Arc<Mutex<HashMap<ConnectionId, Connection>>>,
 }
 
 pub fn net_event_queue() -> (NetEventSender, NetEventReceiver) {
@@ -45,6 +47,7 @@ impl ConnectionManager {
     pub fn new() -> Self {
         Self {
             next_connection_id: Arc::new(AtomicU64::new(1)),
+            connections: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -55,6 +58,7 @@ impl ConnectionManager {
     ) -> Result<()> {
         let connection_id = ConnectionId(self.next_connection_id.fetch_add(1, Ordering::Relaxed));
         info!(connection_id = connection_id.0, remote = %connection.remote_address(), "transport client connected");
+        self.insert_connection(connection_id, connection.clone());
 
         let datagram_connection: Connection = connection.clone();
         let datagram_events = event_sender.clone();
@@ -75,8 +79,31 @@ impl ConnectionManager {
             .await;
 
         let _ = event_sender.send(NetEvent::Disconnected { connection_id });
+        self.remove_connection(connection_id);
 
         result
+    }
+
+    pub fn send_datagram(&self, connection_id: ConnectionId, payload: &[u8]) -> Result<()> {
+        let connection = self
+            .connections
+            .lock()
+            .expect("connection registry mutex poisoned")
+            .get(&connection_id)
+            .cloned()
+            .context("connection is not registered")?;
+
+        connection
+            .send_datagram(payload)
+            .context("failed to send datagram")
+    }
+
+    pub fn max_datagram_size(&self, connection_id: ConnectionId) -> Option<usize> {
+        self.connections
+            .lock()
+            .expect("connection registry mutex poisoned")
+            .get(&connection_id)
+            .and_then(Connection::max_datagram_size)
     }
 
     async fn accept_reliable_streams(
@@ -99,6 +126,20 @@ impl ConnectionManager {
                 },
             });
         }
+    }
+
+    fn insert_connection(&self, connection_id: ConnectionId, connection: Connection) {
+        self.connections
+            .lock()
+            .expect("connection registry mutex poisoned")
+            .insert(connection_id, connection);
+    }
+
+    fn remove_connection(&self, connection_id: ConnectionId) {
+        self.connections
+            .lock()
+            .expect("connection registry mutex poisoned")
+            .remove(&connection_id);
     }
 }
 

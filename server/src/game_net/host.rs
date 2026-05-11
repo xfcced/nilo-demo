@@ -1,7 +1,9 @@
+use super::binary::{decode_input, encode_state, BinaryState};
 use super::framing::{
     outbound_frame_queue, write_framed_messages, FramedStreamReader, OutboundFrameSender,
 };
 use crate::game::protocol::{ClientMessage, ServerMessage};
+use crate::game::room::RoomSnapshot;
 use crate::net::{
     net_event_queue, ConnectionId, ConnectionManager, NetEvent, NetEventReceiver,
     RawBidirectionalStream, WebTransportListener,
@@ -105,6 +107,28 @@ impl GameNetworkHost {
         self.send_reliable(connection_id, CONTROL_CHANNEL, payload)
     }
 
+    pub fn send_state(&self, connection_id: ConnectionId, snapshot: &RoomSnapshot) -> Result<()> {
+        let payload = encode_state(BinaryState {
+            server_tick: snapshot.server_tick,
+            players: &snapshot.players,
+            boxes: &snapshot.boxes,
+        })
+        .context("failed to encode state datagram")?;
+
+        if let Some(max_size) = self.connections.max_datagram_size(connection_id) {
+            if payload.len() > max_size {
+                warn!(
+                    connection_id = connection_id.0,
+                    bytes = payload.len(),
+                    max_size,
+                    "state datagram exceeds current transport max size"
+                );
+            }
+        }
+
+        self.connections.send_datagram(connection_id, &payload)
+    }
+
     fn send_reliable(
         &self,
         connection_id: ConnectionId,
@@ -197,17 +221,41 @@ async fn handle_raw_net_events(
                 connection_id,
                 payload,
             } => {
-                info!(
-                    connection_id = connection_id.0,
-                    bytes = payload.len(),
-                    payload = %String::from_utf8_lossy(&payload),
-                    "received datagram"
-                );
+                handle_datagram_payload(connection_id, payload, &game_event_sender);
             }
             NetEvent::Disconnected { connection_id } => {
                 network.remove_client(connection_id);
                 let _ = game_event_sender.send(GameNetEvent::Disconnected { connection_id });
             }
+        }
+    }
+}
+
+fn handle_datagram_payload(
+    connection_id: ConnectionId,
+    payload: Vec<u8>,
+    event_sender: &GameNetEventSender,
+) {
+    match decode_input(&payload) {
+        Ok(input) => {
+            let _ = event_sender.send(GameNetEvent::Message {
+                connection_id,
+                message: ClientMessage::Input {
+                    seq: input.seq as u64,
+                    up: input.input.up,
+                    down: input.input.down,
+                    left: input.input.left,
+                    right: input.input.right,
+                },
+            });
+        }
+        Err(error) => {
+            warn!(
+                connection_id = connection_id.0,
+                bytes = payload.len(),
+                ?error,
+                "ignoring invalid datagram payload"
+            );
         }
     }
 }
