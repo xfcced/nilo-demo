@@ -7,6 +7,7 @@ const SERVER_TICK_MS = 1000 / SERVER_TICK_RATE
 const INTERPOLATION_DELAY_TICKS = 3
 const MAX_SAMPLES_PER_ENTITY = 20
 const ENTITY_EXPIRE_TICKS = 8
+const BOX_HOLD_SAMPLE_INTERVAL_TICKS = 4
 
 type StateMessage = Extract<ServerMessage, { type: 'state' }>
 
@@ -81,11 +82,6 @@ export class SnapshotInterpolator {
     }
 
     for (const [boxId, samples] of this.boxSamples) {
-      if (isExpired(samples, renderTick)) {
-        this.boxSamples.delete(boxId)
-        continue
-      }
-
       const sample = sampleBox(samples, renderTick)
       if (sample) {
         boxes.push(sample)
@@ -111,9 +107,27 @@ export class SnapshotInterpolator {
 
   private pushBoxSample(boxId: number, sample: BoxSample): void {
     const samples = this.boxSamples.get(boxId) ?? []
+    appendBoxHoldSamples(samples, sample.serverTick)
     samples.push(sample)
     trimSamples(samples)
     this.boxSamples.set(boxId, samples)
+  }
+}
+
+function appendBoxHoldSamples(samples: BoxSample[], incomingTick: number): void {
+  const latest = samples.at(-1)
+  if (!latest) {
+    return
+  }
+
+  const gap = incomingTick - latest.serverTick
+  if (gap <= 1) {
+    return
+  }
+
+  const firstHoldTick = Math.max(latest.serverTick + 1, incomingTick - BOX_HOLD_SAMPLE_INTERVAL_TICKS)
+  for (let serverTick = firstHoldTick; serverTick < incomingTick; serverTick += 1) {
+    samples.push({ ...latest, serverTick })
   }
 }
 

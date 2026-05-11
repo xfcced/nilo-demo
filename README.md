@@ -98,11 +98,13 @@ High-rate `input` and `state` messages use WebTransport datagrams with a compact
 
 ```text
 input: u8 type=1, u32 inputSeq, u8 buttons
-state: u8 type=2, u32 serverTick, u8 playerCount, u8 boxCount, players, boxes
+state: u8 type=2, u32 serverTick, u8 playerCount, u8 changedBoxCount, players, changedBoxes
 player: u8 playerId, i16 xCm, i16 yCm, i16 zCm
 box: u8 boxId, i16 xCm, i16 yCm, i16 zCm, u8 largestQuatIndex, i16 qA, i16 qB, i16 qC
 ```
 
 Box rotations use smallest-three quaternion compression: the largest absolute component is omitted, the quaternion is sign-flipped if needed so the omitted component is positive, and the other three components are quantized into `i16`.
+
+State datagrams always include all current players. New connections receive one full box baseline, then boxes are changed-only: if a box's quantized position and rotation match the last server snapshot, it is omitted and the client keeps its previous box state.
 
 `serverTick` is the interpolation timeline. Ping RTT is measured entirely on the client by matching `ping.pingSeq` to `pong.pingSeq`.
