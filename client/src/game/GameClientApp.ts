@@ -33,6 +33,7 @@ export class GameClientApp {
   private previousNetworkCounters: TransportCounters | null = null
 
   constructor(private elements: AppElements = getAppElements()) {
+    this.applyBuildDefaults()
     this.arena = new ArenaScene(elements.canvas)
     this.gameLoop = new GameLoop({
       fixedStepMs: FIXED_STEP_MS,
@@ -40,6 +41,17 @@ export class GameClientApp {
       update: (deltaMs) => this.fixedUpdate(deltaMs),
       drawFrame: (frameMs) => this.render(frameMs),
     })
+  }
+
+  private applyBuildDefaults(): void {
+    const webTransportUrl = import.meta.env.VITE_WEBTRANSPORT_URL?.trim()
+    if (webTransportUrl) {
+      this.elements.urlInput.value = webTransportUrl
+    }
+
+    if ('VITE_CERTIFICATE_HASH' in import.meta.env) {
+      this.elements.hashInput.value = import.meta.env.VITE_CERTIFICATE_HASH.trim()
+    }
   }
 
   start(): void {

@@ -1,0 +1,16 @@
+.git
+.github
+.DS_Store
+
+client/node_modules
+client/dist
+client/*.tsbuildinfo
+
+server/target
+target
+
+server/certs/*.pem
+.env
+.env.*
+!.env.example
+*.log

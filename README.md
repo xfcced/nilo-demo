@@ -80,6 +80,54 @@ Click `Connect`. A successful connection shows:
 
 Use `WASD` or arrow keys to move. Movement is calculated on the server and returned through `state` messages. Remote players and boxes are rendered through a client-side interpolation buffer; the local player still uses the latest authoritative state.
 
+## Docker Compose Deployment
+
+The Compose setup runs the Vite client as static files behind Nginx and runs the Rust WebTransport server directly. WebTransport is not proxied through Nginx.
+
+This Compose file is configured for:
+
+```text
+nilo.luchang.xyz
+wt.luchang.xyz
+```
+
+Recommended DNS:
+
+```text
+nilo.luchang.xyz -> your VPS public IP
+wt.luchang.xyz   -> your VPS public IP
+```
+
+Open these ports in the VPS firewall and cloud security group:
+
+```text
+TCP 80
+UDP 443
+```
+
+Issue a certificate for the WebTransport domain. The default Compose file expects Let's Encrypt files at:
+
+```text
+/etc/letsencrypt/live/wt.luchang.xyz/fullchain.pem
+/etc/letsencrypt/live/wt.luchang.xyz/privkey.pem
+```
+
+Deploy:
+
+```bash
+cd /opt/nilo-demo
+docker compose up -d --build
+```
+
+Useful checks:
+
+```bash
+docker compose ps
+docker compose logs -f server
+```
+
+The production client build leaves `VITE_CERTIFICATE_HASH` empty because a public CA certificate is validated by the browser. For local self-signed certificates, pass the SHA-256 certificate hash as `VITE_CERTIFICATE_HASH`.
+
 ## Current Message Protocol
 
 The client opens a named reliable `control` channel over a bidirectional WebTransport stream. Each stream starts with a length-prefixed UTF-8 channel-name frame, then carries length-prefixed payload frames. Low-rate control messages are still JSON:

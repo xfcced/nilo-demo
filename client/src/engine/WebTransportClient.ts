@@ -35,14 +35,7 @@ export class WebTransportClient {
     }
 
     this.counters = createEmptyCounters()
-    this.transport = new WebTransport(url, {
-      serverCertificateHashes: [
-        {
-          algorithm: 'sha-256',
-          value: hexToBytes(certificateHashHex),
-        },
-      ],
-    })
+    this.transport = new WebTransport(url, createTransportOptions(certificateHashHex))
 
     await this.transport.ready
 
@@ -213,6 +206,22 @@ export class WebTransportClient {
 
   private emitError(error: Error): void {
     this.errorHandlers.forEach((handler) => handler(error))
+  }
+}
+
+function createTransportOptions(certificateHashHex: string): WebTransportOptions {
+  const normalizedHash = certificateHashHex.trim()
+  if (!normalizedHash) {
+    return {}
+  }
+
+  return {
+    serverCertificateHashes: [
+      {
+        algorithm: 'sha-256',
+        value: hexToBytes(normalizedHash),
+      },
+    ],
   }
 }
 

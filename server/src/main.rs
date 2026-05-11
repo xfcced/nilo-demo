@@ -5,14 +5,16 @@ mod net;
 use anyhow::{Context, Result};
 use game::room::Room;
 use game::server_host::ServerHost;
+use std::env;
 use std::sync::Arc;
 use tracing::info;
 use wtransport::tls::Sha256DigestFmt;
 use wtransport::Identity;
 
-const PORT: u16 = 4433;
-const CERT_FILE: &str = "certs/localhost.pem";
-const KEY_FILE: &str = "certs/localhost-key.pem";
+const DEFAULT_PORT: u16 = 4433;
+const DEFAULT_CERT_FILE: &str = "certs/localhost.pem";
+const DEFAULT_KEY_FILE: &str = "certs/localhost-key.pem";
+const WEBTRANSPORT_PATH: &str = "/webtransport";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -23,27 +25,67 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let identity = load_or_create_identity().await?;
+    let settings = ServerSettings::from_env()?;
+    let identity = load_or_create_identity(&settings).await?;
     print_certificate_hash(&identity);
 
     let room = Arc::new(Room::new());
-    let server = ServerHost::new(PORT, identity, room)?;
+    let server = ServerHost::new(settings.port, identity, room)?;
     let addr = server.local_addr()?;
 
     info!("server ready");
     println!(
         "WebTransport URL: https://localhost:{}{}",
         addr.port(),
-        "/webtransport"
+        WEBTRANSPORT_PATH
     );
 
     server.serve().await
 }
 
-async fn load_or_create_identity() -> Result<Identity> {
-    match Identity::load_pemfiles(CERT_FILE, KEY_FILE).await {
+struct ServerSettings {
+    port: u16,
+    cert_file: String,
+    key_file: String,
+    uses_default_cert_files: bool,
+}
+
+impl ServerSettings {
+    fn from_env() -> Result<Self> {
+        let port = match env::var("PORT") {
+            Ok(value) => value
+                .parse::<u16>()
+                .with_context(|| format!("invalid PORT value: {value}"))?,
+            Err(_) => DEFAULT_PORT,
+        };
+
+        let cert_file = env::var("TLS_CERT_FILE").unwrap_or_else(|_| DEFAULT_CERT_FILE.to_string());
+        let key_file = env::var("TLS_KEY_FILE").unwrap_or_else(|_| DEFAULT_KEY_FILE.to_string());
+        let uses_default_cert_files =
+            cert_file == DEFAULT_CERT_FILE && key_file == DEFAULT_KEY_FILE;
+
+        Ok(Self {
+            port,
+            cert_file,
+            key_file,
+            uses_default_cert_files,
+        })
+    }
+}
+
+async fn load_or_create_identity(settings: &ServerSettings) -> Result<Identity> {
+    match Identity::load_pemfiles(&settings.cert_file, &settings.key_file).await {
         Ok(identity) => Ok(identity),
         Err(error) => {
+            if !settings.uses_default_cert_files {
+                return Err(error).with_context(|| {
+                    format!(
+                        "failed to load TLS certificate files: {} and {}",
+                        settings.cert_file, settings.key_file
+                    )
+                });
+            }
+
             eprintln!("Could not load existing certificate files: {error}");
             eprintln!("Generating a new local self-signed WebTransport certificate.");
 
@@ -52,13 +94,13 @@ async fn load_or_create_identity() -> Result<Identity> {
 
             identity
                 .certificate_chain()
-                .store_pemfile(CERT_FILE)
+                .store_pemfile(&settings.cert_file)
                 .await
                 .context("failed to store certificate")?;
 
             identity
                 .private_key()
-                .store_secret_pemfile(KEY_FILE)
+                .store_secret_pemfile(&settings.key_file)
                 .await
                 .context("failed to store private key")?;
 

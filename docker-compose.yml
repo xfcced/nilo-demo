@@ -1,0 +1,26 @@
+services:
+  client:
+    build:
+      context: .
+      dockerfile: client/Dockerfile
+      args:
+        VITE_WEBTRANSPORT_URL: https://wt.luchang.xyz/webtransport
+        VITE_CERTIFICATE_HASH: ""
+    ports:
+      - "80:80"
+    restart: unless-stopped
+
+  server:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    environment:
+      PORT: "4433"
+      TLS_CERT_FILE: /certs/fullchain.pem
+      TLS_KEY_FILE: /certs/privkey.pem
+    volumes:
+      - /etc/letsencrypt/live/wt.luchang.xyz/fullchain.pem:/certs/fullchain.pem:ro
+      - /etc/letsencrypt/live/wt.luchang.xyz/privkey.pem:/certs/privkey.pem:ro
+    ports:
+      - "443:4433/udp"
+    restart: unless-stopped
