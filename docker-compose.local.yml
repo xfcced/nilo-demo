@@ -8,6 +8,10 @@ services:
         VITE_CERTIFICATE_HASH: ""
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      - /etc/letsencrypt/live/nilo.luchang.xyz/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      - /etc/letsencrypt/live/nilo.luchang.xyz/privkey.pem:/etc/nginx/certs/privkey.pem:ro
     restart: unless-stopped
 
   server:
