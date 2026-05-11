@@ -1,4 +1,4 @@
-import { WebTransportLineClient } from '../../engine/WebTransportLineClient'
+import { WebTransportLineClient, type TransportCounters } from '../../engine/WebTransportLineClient'
 import { decodeServerMessage, encodeClientMessage, type ClientMessage, type ServerMessage } from './protocol'
 
 type MessageHandler = (message: ServerMessage) => void
@@ -27,6 +27,10 @@ export class GameConnection {
 
   send(message: ClientMessage): Promise<void> {
     return this.transport.sendLine(encodeClientMessage(message))
+  }
+
+  getStats(): TransportCounters {
+    return this.transport.getStats()
   }
 
   close(): Promise<void> {

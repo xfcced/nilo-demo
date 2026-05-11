@@ -2,6 +2,13 @@ type LineHandler = (line: string) => void
 type CloseHandler = (reason: string) => void
 type ErrorHandler = (error: Error) => void
 
+export type TransportCounters = {
+  rxMessages: number
+  txMessages: number
+  rxBytes: number
+  txBytes: number
+}
+
 export class WebTransportLineClient {
   private transport: WebTransport | null = null
   private writer: WritableStreamDefaultWriter<Uint8Array> | null = null
@@ -9,12 +16,14 @@ export class WebTransportLineClient {
   private closeHandlers = new Set<CloseHandler>()
   private errorHandlers = new Set<ErrorHandler>()
   private encoder = new TextEncoder()
+  private counters: TransportCounters = createEmptyCounters()
 
   async connect(url: string, certificateHashHex: string): Promise<void> {
     if (!window.WebTransport) {
       throw new Error('This browser does not support WebTransport')
     }
 
+    this.counters = createEmptyCounters()
     this.transport = new WebTransport(url, {
       serverCertificateHashes: [
         {
@@ -40,7 +49,14 @@ export class WebTransportLineClient {
       throw new Error('WebTransport stream is not connected')
     }
 
-    await this.writer.write(this.encoder.encode(`${line}\n`))
+    const payload = this.encoder.encode(`${line}\n`)
+    await this.writer.write(payload)
+    this.counters.txMessages += 1
+    this.counters.txBytes += payload.byteLength
+  }
+
+  getStats(): TransportCounters {
+    return { ...this.counters }
   }
 
   onLine(handler: LineHandler): () => void {
@@ -80,12 +96,14 @@ export class WebTransportLineClient {
           return
         }
 
+        this.counters.rxBytes += value.byteLength
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
         buffer = lines.pop() ?? ''
 
         for (const line of lines) {
           if (line.trim()) {
+            this.counters.rxMessages += 1
             this.lineHandlers.forEach((handler) => handler(line))
           }
         }
@@ -105,6 +123,15 @@ export class WebTransportLineClient {
 
   private emitError(error: Error): void {
     this.errorHandlers.forEach((handler) => handler(error))
+  }
+}
+
+function createEmptyCounters(): TransportCounters {
+  return {
+    rxMessages: 0,
+    txMessages: 0,
+    rxBytes: 0,
+    txBytes: 0,
   }
 }
 

@@ -1,5 +1,6 @@
 import { GameLoop } from '../engine/GameLoop'
 import { KeyboardInput } from '../engine/KeyboardInput'
+import type { TransportCounters } from '../engine/WebTransportLineClient'
 import { type AppElements, getAppElements } from './appElements'
 import { ArenaScene } from './ArenaScene'
 import { GameConnection } from './net/GameConnection'
@@ -10,6 +11,7 @@ const FIXED_STEP_MS = 1000 / 60
 const MAX_FRAME_MS = 250
 const PING_SEND_MS = 1000
 const FPS_SAMPLE_MS = 500
+const NETWORK_STATS_SAMPLE_MS = 1000
 
 export class GameClientApp {
   private debugPanel = new DebugPanel()
@@ -27,6 +29,8 @@ export class GameClientApp {
   private pendingPings = new Map<number, number>()
   private fpsElapsedMs = 0
   private fpsFrameCount = 0
+  private networkStatsElapsedMs = 0
+  private previousNetworkCounters: TransportCounters | null = null
 
   constructor(private elements: AppElements = getAppElements()) {
     this.arena = new ArenaScene(elements.canvas)
@@ -44,6 +48,7 @@ export class GameClientApp {
     this.gameLoop.start()
     this.debugPanel.setConnection('disconnected')
     this.debugPanel.setFps(null)
+    this.debugPanel.setNetworkStats(null)
   }
 
   private bindConnectionEvents(): void {
@@ -105,6 +110,7 @@ export class GameClientApp {
       this.debugPanel.log('connecting...')
 
       await this.serverConnection.connect(this.elements.urlInput.value.trim(), this.elements.hashInput.value.trim())
+      this.resetNetworkStatsSample()
       await this.serverConnection.send({ type: 'join' })
 
       this.connected = true
@@ -116,6 +122,8 @@ export class GameClientApp {
       this.connected = false
       this.debugPanel.setConnection('disconnected')
       this.debugPanel.log(`connect failed: ${String(error)}`)
+      this.previousNetworkCounters = null
+      this.networkStatsElapsedMs = 0
       this.setButtons(false)
     }
   }
@@ -149,6 +157,7 @@ export class GameClientApp {
 
   private render(frameMs: number): void {
     this.updateFps(frameMs)
+    this.updateNetworkStats(frameMs)
     this.arena.applyRenderState(this.interpolator.sample(performance.now(), this.localPlayerId))
     this.arena.render()
   }
@@ -164,6 +173,44 @@ export class GameClientApp {
     this.debugPanel.setFps((this.fpsFrameCount * 1000) / this.fpsElapsedMs)
     this.fpsElapsedMs = 0
     this.fpsFrameCount = 0
+  }
+
+  private updateNetworkStats(frameMs: number): void {
+    if (!this.connected || !this.previousNetworkCounters) {
+      return
+    }
+
+    this.networkStatsElapsedMs += frameMs
+    if (this.networkStatsElapsedMs < NETWORK_STATS_SAMPLE_MS) {
+      return
+    }
+
+    const current = this.serverConnection.getStats()
+    const sampleSeconds = this.networkStatsElapsedMs / 1000
+    this.debugPanel.setNetworkStats({
+      rxMessages: current.rxMessages,
+      txMessages: current.txMessages,
+      rxMessagesPerSec: (current.rxMessages - this.previousNetworkCounters.rxMessages) / sampleSeconds,
+      txMessagesPerSec: (current.txMessages - this.previousNetworkCounters.txMessages) / sampleSeconds,
+      rxBytesPerSec: (current.rxBytes - this.previousNetworkCounters.rxBytes) / sampleSeconds,
+      txBytesPerSec: (current.txBytes - this.previousNetworkCounters.txBytes) / sampleSeconds,
+    })
+
+    this.previousNetworkCounters = current
+    this.networkStatsElapsedMs = 0
+  }
+
+  private resetNetworkStatsSample(): void {
+    this.previousNetworkCounters = this.serverConnection.getStats()
+    this.networkStatsElapsedMs = 0
+    this.debugPanel.setNetworkStats({
+      rxMessages: this.previousNetworkCounters.rxMessages,
+      txMessages: this.previousNetworkCounters.txMessages,
+      rxMessagesPerSec: 0,
+      txMessagesPerSec: 0,
+      rxBytesPerSec: 0,
+      txBytesPerSec: 0,
+    })
   }
 
   private sendPing(): void {
