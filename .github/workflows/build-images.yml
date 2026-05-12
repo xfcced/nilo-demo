@@ -1,4 +1,4 @@
-name: Build Images
+name: Build and Deploy
 
 on:
   push:
@@ -23,6 +23,7 @@ jobs:
     outputs:
       client: ${{ steps.filter.outputs.client }}
       server: ${{ steps.filter.outputs.server }}
+      deploy: ${{ steps.filter.outputs.deploy }}
 
     steps:
       - name: Checkout
@@ -41,6 +42,9 @@ jobs:
               - '.github/workflows/build-images.yml'
               - '.dockerignore'
               - 'server/**'
+            deploy:
+              - '.github/workflows/build-images.yml'
+              - 'docker-compose.yml'
 
   build-client:
     needs: changes
@@ -106,3 +110,39 @@ jobs:
             ${{ env.SERVER_IMAGE }}:${{ github.sha }}
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
+
+  deploy:
+    needs:
+      - changes
+      - build-client
+      - build-server
+    if: >-
+      ${{
+        always() &&
+        needs.build-client.result != 'failure' &&
+        needs.build-client.result != 'cancelled' &&
+        needs.build-server.result != 'failure' &&
+        needs.build-server.result != 'cancelled' &&
+        (
+          github.event_name == 'workflow_dispatch' ||
+          needs.changes.outputs.client == 'true' ||
+          needs.changes.outputs.server == 'true' ||
+          needs.changes.outputs.deploy == 'true'
+        )
+      }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy on VPS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          script: |
+            set -e
+            cd "${{ secrets.VPS_DEPLOY_PATH }}"
+            git pull --ff-only
+            docker compose pull
+            docker compose up -d
+            docker image prune -f
