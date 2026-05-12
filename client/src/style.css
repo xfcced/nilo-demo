@@ -34,7 +34,7 @@ input {
   position: fixed;
   top: 34px;
   left: 4px;
-  width: min(260px, calc(100vw - 8px));
+  width: min(340px, calc(100vw - 8px));
   display: grid;
   gap: 3px;
   padding: 4px;
@@ -115,9 +115,9 @@ button:disabled {
 
 .metrics {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(150px, 1fr));
   column-gap: 6px;
-  row-gap: 1px;
+  row-gap: 2px;
   font-size: 10px;
   line-height: 1.15;
 }
@@ -125,13 +125,15 @@ button:disabled {
 .metrics div {
   min-width: 0;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 2px;
+  grid-template-columns: 58px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 4px;
 }
 
 .metrics span {
   color: #000000;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .metrics strong {
@@ -174,8 +176,12 @@ button:disabled {
   #debugPanel {
     top: 32px;
     left: 4px;
-    width: min(280px, calc(100vw - 8px));
+    width: min(340px, calc(100vw - 8px));
     padding: 4px;
+  }
+
+  .metrics {
+    grid-template-columns: 1fr;
   }
 
   .debug-toggle {

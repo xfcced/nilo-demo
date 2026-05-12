@@ -163,11 +163,15 @@ impl World {
             .filter_map(|(&player_id, &body_handle)| {
                 let body = self.bodies.get(body_handle)?;
                 let position = body.translation();
+                let velocity = body.linvel();
                 Some(PlayerSnapshot {
                     player_id,
                     x: position.x,
                     y: position.y,
                     z: position.z,
+                    vx: velocity.x,
+                    vy: velocity.y,
+                    vz: velocity.z,
                 })
             })
             .collect()

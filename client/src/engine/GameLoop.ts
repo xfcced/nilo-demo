@@ -2,7 +2,7 @@ type GameLoopOptions = {
   fixedStepMs: number
   maxFrameMs: number
   update: (deltaMs: number) => void
-  drawFrame: (frameMs: number) => void
+  drawFrame: (frameMs: number, alpha: number) => void
 }
 
 export class GameLoop {
@@ -25,7 +25,7 @@ export class GameLoop {
       this.accumulatorMs -= this.options.fixedStepMs
     }
 
-    this.options.drawFrame(frameMs)
+    this.options.drawFrame(frameMs, this.accumulatorMs / this.options.fixedStepMs)
     window.requestAnimationFrame((nextNow) => this.frame(nextNow))
   }
 }

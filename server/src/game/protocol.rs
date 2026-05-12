@@ -41,6 +41,9 @@ pub struct PlayerSnapshot {
     pub x: f32,
     pub y: f32,
     pub z: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub vz: f32,
 }
 
 #[derive(Clone, Debug, Serialize)]

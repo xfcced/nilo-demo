@@ -38,10 +38,12 @@ jobs:
               - '.github/workflows/build-images.yml'
               - '.dockerignore'
               - 'client/**'
+              - 'config/**'
             server:
               - '.github/workflows/build-images.yml'
               - '.dockerignore'
               - 'server/**'
+              - 'config/**'
             deploy:
               - '.github/workflows/build-images.yml'
               - 'docker-compose.yml'

@@ -5,7 +5,7 @@ export type ClientMessage = { type: 'join' } | { type: 'ping'; pingSeq: number }
 export type ServerMessage =
   | { type: 'welcome'; playerId: number }
   | { type: 'pong'; pingSeq: number }
-  | { type: 'state'; serverTick: number; players: PlayerSnapshot[]; boxes: BoxSnapshot[] }
+  | { type: 'state'; serverTick: number; lastProcessedInputSeq: number; players: PlayerSnapshot[]; boxes: BoxSnapshot[] }
   | { type: 'error'; message: string }
 
 export type PlayerSnapshot = {
@@ -13,6 +13,9 @@ export type PlayerSnapshot = {
   x: number
   y: number
   z: number
+  vx: number
+  vy: number
+  vz: number
 }
 
 export type BoxSnapshot = {
@@ -29,8 +32,8 @@ export type BoxSnapshot = {
 const BINARY_TYPE_INPUT = 1
 const BINARY_TYPE_STATE = 2
 const INPUT_BYTES = 6
-const STATE_HEADER_BYTES = 7
-const PLAYER_BYTES = 7
+const STATE_HEADER_BYTES = 11
+const PLAYER_BYTES = 13
 const BOX_BYTES = 14
 const SMALLEST_THREE_RANGE = Math.SQRT1_2
 
@@ -59,8 +62,9 @@ export function decodeStateDatagram(payload: Uint8Array): ServerMessage {
   }
 
   const serverTick = view.getUint32(1, false)
-  const playerCount = view.getUint8(5)
-  const boxCount = view.getUint8(6)
+  const lastProcessedInputSeq = view.getUint32(5, false)
+  const playerCount = view.getUint8(9)
+  const boxCount = view.getUint8(10)
   const expectedBytes = STATE_HEADER_BYTES + playerCount * PLAYER_BYTES + boxCount * BOX_BYTES
   if (payload.byteLength !== expectedBytes) {
     throw new Error(`Invalid state datagram size: ${payload.byteLength}, expected ${expectedBytes}`)
@@ -74,6 +78,9 @@ export function decodeStateDatagram(payload: Uint8Array): ServerMessage {
       x: readPosition(view, offset + 1),
       y: readPosition(view, offset + 3),
       z: readPosition(view, offset + 5),
+      vx: readPosition(view, offset + 7),
+      vy: readPosition(view, offset + 9),
+      vz: readPosition(view, offset + 11),
     })
     offset += PLAYER_BYTES
   }
@@ -89,7 +96,7 @@ export function decodeStateDatagram(payload: Uint8Array): ServerMessage {
     offset += BOX_BYTES
   }
 
-  return { type: 'state', serverTick, players, boxes }
+  return { type: 'state', serverTick, lastProcessedInputSeq, players, boxes }
 }
 
 export function decodeServerMessage(line: string): ServerMessage {
@@ -118,6 +125,7 @@ function isServerMessage(value: unknown): value is ServerMessage {
   if (message.type === 'state') {
     return (
       typeof message.serverTick === 'number' &&
+      typeof message.lastProcessedInputSeq === 'number' &&
       Array.isArray(message.players) &&
       message.players.every(isPlayerSnapshot) &&
       Array.isArray(message.boxes) &&
@@ -138,7 +146,15 @@ function isPlayerSnapshot(value: unknown): value is PlayerSnapshot {
   }
 
   const player = value as Partial<PlayerSnapshot>
-  return typeof player.playerId === 'number' && typeof player.x === 'number' && typeof player.y === 'number' && typeof player.z === 'number'
+  return (
+    typeof player.playerId === 'number' &&
+    typeof player.x === 'number' &&
+    typeof player.y === 'number' &&
+    typeof player.z === 'number' &&
+    typeof player.vx === 'number' &&
+    typeof player.vy === 'number' &&
+    typeof player.vz === 'number'
+  )
 }
 
 function isBoxSnapshot(value: unknown): value is BoxSnapshot {

@@ -17,7 +17,8 @@ struct RoomState {
 #[derive(Debug)]
 struct Player {
     input: PlayerInput,
-    last_input_seq: u64,
+    last_received_input_seq: u64,
+    last_applied_input_seq: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -32,6 +33,7 @@ pub struct RoomSnapshot {
     pub server_tick: u64,
     pub players: Vec<PlayerSnapshot>,
     pub boxes: Vec<BoxSnapshot>,
+    pub last_processed_input_seq: u64,
 }
 
 impl Room {
@@ -48,7 +50,8 @@ impl Room {
     pub fn add_player(&self, player_id: u64) {
         let player = Player {
             input: PlayerInput::default(),
-            last_input_seq: 0,
+            last_received_input_seq: 0,
+            last_applied_input_seq: 0,
         };
 
         let mut state = self.state.lock().expect("room state mutex poisoned");
@@ -68,11 +71,11 @@ impl Room {
             return;
         };
 
-        if seq <= player.last_input_seq {
+        if seq <= player.last_received_input_seq {
             return;
         }
 
-        player.last_input_seq = seq;
+        player.last_received_input_seq = seq;
         player.input = input;
     }
 
@@ -81,25 +84,32 @@ impl Room {
         let inputs = state
             .players
             .iter()
-            .map(|(&player_id, player)| (player_id, player.input))
+            .map(|(&player_id, player)| (player_id, player.input, player.last_received_input_seq))
             .collect::<Vec<_>>();
 
-        for (player_id, input) in inputs {
+        for (player_id, input, input_seq) in inputs {
             state
                 .world
                 .apply_player_input(player_id, input, delta_seconds);
+            if let Some(player) = state.players.get_mut(&player_id) {
+                player.last_applied_input_seq = input_seq;
+            }
         }
 
         state.world.step(delta_seconds);
         state.server_tick += 1;
     }
 
-    pub fn snapshot(&self) -> RoomSnapshot {
+    pub fn snapshot_for_player(&self, player_id: u64) -> RoomSnapshot {
         let state = self.state.lock().expect("room state mutex poisoned");
         RoomSnapshot {
             server_tick: state.server_tick,
             players: state.world.player_snapshots(),
             boxes: state.world.box_snapshots(),
+            last_processed_input_seq: state
+                .players
+                .get(&player_id)
+                .map_or(0, |player| player.last_applied_input_seq),
         }
     }
 

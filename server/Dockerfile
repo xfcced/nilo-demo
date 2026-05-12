@@ -12,6 +12,7 @@ FROM debian:bookworm-slim
 WORKDIR /app
 
 COPY --from=build /app/server/target/release/nilo-demo-server /usr/local/bin/nilo-demo-server
+COPY config ./config/
 
 ENV PORT=4433
 EXPOSE 4433/udp

@@ -205,12 +205,12 @@ fn broadcast_room_state(
     network: &GameNetworkHost,
     delta_tracker: &mut StateDeltaTracker,
 ) {
-    let mut snapshot = room.snapshot();
-    let all_boxes = snapshot.boxes;
+    let all_boxes = room.snapshot_for_player(0).boxes;
     let changed_boxes = delta_tracker.changed_boxes(&all_boxes);
 
     for player_id in room.player_ids() {
         let connection_id = ConnectionId(player_id);
+        let mut snapshot = room.snapshot_for_player(player_id);
         snapshot.boxes =
             delta_tracker.boxes_for_connection(connection_id, &all_boxes, &changed_boxes);
         if let Err(error) = network.send_state(connection_id, &snapshot) {

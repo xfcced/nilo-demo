@@ -9,13 +9,14 @@ This phase establishes the minimum server-authoritative multiplayer physics demo
 - `Ping -> Pong` RTT measurement
 - keyboard input sent from the browser
 - Rapier-backed server-authoritative player movement
+- Rapier-backed local player prediction with server reconciliation
 - dynamic server-owned physics boxes included in state snapshots
 - world state broadcast back to all connected players
 - tick-based snapshot interpolation for remote players and boxes
 - Fixed Three.js arena scene
-- Debug panel for connection state, player id, RTT, FPS, server tick, and transport
+- Debug panel for connection state, player id, RTT, FPS, server tick, transport, and prediction metrics
 
-No client prediction, lobby, chat, gameplay datagram sync, goal scoring, or multi-scene abstraction is included yet.
+No shared-object prediction, lobby, chat, goal scoring, or multi-scene abstraction is included yet.
 
 ## Shared Config
 
@@ -94,7 +95,7 @@ Click `Connect`. A successful connection shows:
 - RTT updated once per second
 - latest `serverTick` from world state snapshots
 
-Use `WASD` or arrow keys to move. Movement is calculated on the server and returned through `state` messages. Remote players and boxes are rendered through a client-side interpolation buffer; the local player still uses the latest authoritative state.
+Use `WASD` or arrow keys to move. The local player is predicted in a client-side Rapier world and reconciled against server-authoritative snapshots. Remote players and boxes are rendered through a client-side interpolation buffer. Shared physics boxes remain server-authoritative and are not predicted locally.
 
 ## Docker Compose Deployment
 
@@ -169,13 +170,13 @@ High-rate `input` and `state` messages use WebTransport datagrams with a compact
 
 ```text
 input: u8 type=1, u32 inputSeq, u8 buttons
-state: u8 type=2, u32 serverTick, u8 playerCount, u8 changedBoxCount, players, changedBoxes
-player: u8 playerId, i16 xCm, i16 yCm, i16 zCm
+state: u8 type=2, u32 serverTick, u32 lastProcessedInputSeq, u8 playerCount, u8 changedBoxCount, players, changedBoxes
+player: u8 playerId, i16 xCm, i16 yCm, i16 zCm, i16 vxCmPerSec, i16 vyCmPerSec, i16 vzCmPerSec
 box: u8 boxId, i16 xCm, i16 yCm, i16 zCm, u8 largestQuatIndex, i16 qA, i16 qB, i16 qC
 ```
 
 Box rotations use smallest-three quaternion compression: the largest absolute component is omitted, the quaternion is sign-flipped if needed so the omitted component is positive, and the other three components are quantized into `i16`.
 
-State datagrams always include all current players. New connections receive one full box baseline, then boxes are changed-only: if a box's quantized position and rotation match the last server snapshot, it is omitted and the client keeps its previous box state.
+State datagrams always include all current players. `lastProcessedInputSeq` is connection-local: it acknowledges the latest input sequence the server has applied for that client, and the client uses it to drop acknowledged pending inputs before replaying the rest. New connections receive one full box baseline, then boxes are changed-only: if a box's quantized position and rotation match the last server snapshot, it is omitted and the client keeps its previous box state.
 
 `serverTick` is the interpolation timeline. Ping RTT is measured entirely on the client by matching `ping.pingSeq` to `pong.pingSeq`.

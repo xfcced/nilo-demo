@@ -7,8 +7,8 @@ use tracing::warn;
 const TYPE_INPUT: u8 = 1;
 const TYPE_STATE: u8 = 2;
 const INPUT_BYTES: usize = 6;
-const STATE_HEADER_BYTES: usize = 7;
-const PLAYER_BYTES: usize = 7;
+const STATE_HEADER_BYTES: usize = 11;
+const PLAYER_BYTES: usize = 13;
 const BOX_BYTES: usize = 14;
 const SMALLEST_THREE_RANGE: f32 = std::f32::consts::FRAC_1_SQRT_2;
 static POSITION_CLAMP_LOGGED: AtomicBool = AtomicBool::new(false);
@@ -23,6 +23,7 @@ pub struct BinaryInput {
 #[derive(Clone, Debug)]
 pub struct BinaryState<'a> {
     pub server_tick: u64,
+    pub last_processed_input_seq: u64,
     pub players: &'a [PlayerSnapshot],
     pub boxes: &'a [BoxSnapshot],
     pub position_scale: f32,
@@ -54,6 +55,11 @@ pub fn encode_state(state: BinaryState<'_>) -> Result<Vec<u8>> {
         state.server_tick
     );
     ensure!(
+        state.last_processed_input_seq <= u32::MAX as u64,
+        "last processed input seq exceeds binary protocol range: {}",
+        state.last_processed_input_seq
+    );
+    ensure!(
         state.players.len() <= u8::MAX as usize,
         "player count exceeds binary protocol range: {}",
         state.players.len()
@@ -69,6 +75,7 @@ pub fn encode_state(state: BinaryState<'_>) -> Result<Vec<u8>> {
     );
     payload.push(TYPE_STATE);
     payload.extend_from_slice(&(state.server_tick as u32).to_be_bytes());
+    payload.extend_from_slice(&(state.last_processed_input_seq as u32).to_be_bytes());
     payload.push(state.players.len() as u8);
     payload.push(state.boxes.len() as u8);
 
@@ -77,6 +84,9 @@ pub fn encode_state(state: BinaryState<'_>) -> Result<Vec<u8>> {
         write_position(&mut payload, player.x, state.position_scale);
         write_position(&mut payload, player.y, state.position_scale);
         write_position(&mut payload, player.z, state.position_scale);
+        write_position(&mut payload, player.vx, state.position_scale);
+        write_position(&mut payload, player.vy, state.position_scale);
+        write_position(&mut payload, player.vz, state.position_scale);
     }
 
     for box_snapshot in state.boxes {
@@ -195,6 +205,9 @@ mod tests {
             x: 1.234,
             y: 0.34,
             z: -3.2,
+            vx: 4.5,
+            vy: 0.0,
+            vz: -2.25,
         }];
         let boxes = vec![BoxSnapshot {
             box_id: 9,
@@ -209,6 +222,7 @@ mod tests {
 
         let encoded = encode_state(BinaryState {
             server_tick: 100,
+            last_processed_input_seq: 42,
             players: &players,
             boxes: &boxes,
             position_scale: 100.0,
@@ -219,11 +233,13 @@ mod tests {
         assert_eq!(encoded.len(), STATE_HEADER_BYTES + PLAYER_BYTES + BOX_BYTES);
         assert_eq!(encoded[0], TYPE_STATE);
         assert_eq!(u32::from_be_bytes(encoded[1..5].try_into().unwrap()), 100);
-        assert_eq!(i16::from_be_bytes(encoded[8..10].try_into().unwrap()), 123);
-        assert_eq!(encoded[14], 9);
-        assert_eq!(encoded[21], 3);
+        assert_eq!(u32::from_be_bytes(encoded[5..9].try_into().unwrap()), 42);
+        assert_eq!(i16::from_be_bytes(encoded[12..14].try_into().unwrap()), 123);
+        assert_eq!(i16::from_be_bytes(encoded[18..20].try_into().unwrap()), 450);
+        assert_eq!(encoded[24], 9);
+        assert_eq!(encoded[31], 3);
         assert_eq!(
-            i16::from_be_bytes(encoded[26..28].try_into().unwrap()),
+            i16::from_be_bytes(encoded[36..38].try_into().unwrap()),
             -23170
         );
     }

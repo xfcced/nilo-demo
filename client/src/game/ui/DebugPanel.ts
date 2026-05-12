@@ -9,6 +9,13 @@ export type NetworkStats = {
   txBytesPerSec: number
 }
 
+export type PredictionMetrics = {
+  pendingInputCount: number
+  lastAckedInputSeq: number
+  predictionError: number
+  correctionCount: number
+}
+
 type DebugPanelElements = {
   panel: HTMLElement
   toggleButton: HTMLButtonElement
@@ -21,6 +28,10 @@ type DebugPanelElements = {
   txMessageValue: HTMLElement
   downloadValue: HTMLElement
   uploadValue: HTMLElement
+  pendingInputValue: HTMLElement
+  ackSeqValue: HTMLElement
+  predictionErrorValue: HTMLElement
+  correctionValue: HTMLElement
   log: HTMLPreElement
 }
 
@@ -41,6 +52,10 @@ export class DebugPanel {
       txMessageValue: getElement('txMessageValue'),
       downloadValue: getElement('downloadValue'),
       uploadValue: getElement('uploadValue'),
+      pendingInputValue: getElement('pendingInputValue'),
+      ackSeqValue: getElement('ackSeqValue'),
+      predictionErrorValue: getElement('predictionErrorValue'),
+      correctionValue: getElement('correctionValue'),
       log: getElement('log'),
     }
 
@@ -90,6 +105,21 @@ export class DebugPanel {
     this.elements.txMessageValue.textContent = `${stats.txMessages} (${formatRate(stats.txMessagesPerSec)})`
     this.elements.downloadValue.textContent = formatBytesPerSec(stats.rxBytesPerSec)
     this.elements.uploadValue.textContent = formatBytesPerSec(stats.txBytesPerSec)
+  }
+
+  setPredictionMetrics(metrics: PredictionMetrics | null): void {
+    if (!metrics) {
+      this.elements.pendingInputValue.textContent = '-'
+      this.elements.ackSeqValue.textContent = '-'
+      this.elements.predictionErrorValue.textContent = '-'
+      this.elements.correctionValue.textContent = '-'
+      return
+    }
+
+    this.elements.pendingInputValue.textContent = String(metrics.pendingInputCount)
+    this.elements.ackSeqValue.textContent = String(metrics.lastAckedInputSeq)
+    this.elements.predictionErrorValue.textContent = `${(metrics.predictionError * 100).toFixed(1)} cm`
+    this.elements.correctionValue.textContent = String(metrics.correctionCount)
   }
 
   log(message: string): void {

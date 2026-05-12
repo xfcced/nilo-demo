@@ -118,6 +118,7 @@ impl GameNetworkHost {
     pub fn send_state(&self, connection_id: ConnectionId, snapshot: &RoomSnapshot) -> Result<()> {
         let payload = encode_state(BinaryState {
             server_tick: snapshot.server_tick,
+            last_processed_input_seq: snapshot.last_processed_input_seq,
             players: &snapshot.players,
             boxes: &snapshot.boxes,
             position_scale: self.protocol.position_scale,

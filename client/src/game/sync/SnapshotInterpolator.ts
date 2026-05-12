@@ -38,7 +38,7 @@ export class SnapshotInterpolator {
     }
   }
 
-  sample(nowMs: number, localPlayerId: number | null): RenderWorldState {
+  sample(nowMs: number, localPlayerId: number | null, localPlayerOverride: RenderPlayer | null = null): RenderWorldState {
     if (!this.latestSnapshot) {
       return { players: [], boxes: [] }
     }
@@ -48,7 +48,9 @@ export class SnapshotInterpolator {
     const players: RenderPlayer[] = []
     const boxes: RenderBox[] = []
 
-    if (localPlayerId !== null) {
+    if (localPlayerOverride) {
+      players.push(localPlayerOverride)
+    } else if (localPlayerId !== null) {
       const localPlayer = this.latestSnapshot.players.find((player) => player.playerId === localPlayerId)
       if (localPlayer) {
         players.push({

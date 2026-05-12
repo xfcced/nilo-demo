@@ -5,6 +5,8 @@ import { type AppElements, getAppElements } from './appElements'
 import { ArenaScene } from './ArenaScene'
 import { defaultWebTransportUrl, gameConfig } from './config'
 import { GameConnection } from './net/GameConnection'
+import type { ServerMessage } from './net/protocol'
+import { LocalPlayerPredictor } from './sync/LocalPlayerPredictor'
 import { SnapshotInterpolator } from './sync/SnapshotInterpolator'
 import { DebugPanel } from './ui/DebugPanel'
 
@@ -18,6 +20,7 @@ export class GameClientApp {
   private input = new KeyboardInput()
   private serverConnection = new GameConnection()
   private interpolator = new SnapshotInterpolator()
+  private localPlayerPredictor = new LocalPlayerPredictor()
   private gameLoop: GameLoop
 
   private inputSeq = 0
@@ -39,7 +42,7 @@ export class GameClientApp {
       fixedStepMs: 1000 / gameConfig.simulation.tickRate,
       maxFrameMs: gameConfig.simulation.maxFrameMs,
       update: (deltaMs) => this.fixedUpdate(deltaMs),
-      drawFrame: (frameMs) => this.render(frameMs),
+      drawFrame: (frameMs, alpha) => this.render(frameMs, alpha),
     })
   }
 
@@ -61,6 +64,7 @@ export class GameClientApp {
     this.debugPanel.setConnection('disconnected')
     this.debugPanel.setFps(null)
     this.debugPanel.setNetworkStats(null)
+    this.debugPanel.setPredictionMetrics(null)
   }
 
   private bindConnectionEvents(): void {
@@ -87,6 +91,7 @@ export class GameClientApp {
       if (message.type === 'state') {
         this.debugPanel.setServerTick(message.serverTick)
         this.interpolator.pushSnapshot(message, performance.now())
+        this.reconcileLocalPlayer(message)
         return
       }
 
@@ -167,10 +172,11 @@ export class GameClientApp {
     }
   }
 
-  private render(frameMs: number): void {
+  private render(frameMs: number, alpha: number): void {
     this.updateFps(frameMs)
     this.updateNetworkStats(frameMs)
-    this.arena.applyRenderState(this.interpolator.sample(performance.now(), this.localPlayerId))
+    const localPlayer = this.localPlayerId === null ? null : this.localPlayerPredictor.renderPlayer(this.localPlayerId, alpha)
+    this.arena.applyRenderState(this.interpolator.sample(performance.now(), this.localPlayerId, localPlayer))
     this.arena.render()
   }
 
@@ -241,6 +247,8 @@ export class GameClientApp {
   private sendInput(): void {
     this.inputSeq += 1
     const movement = this.input.currentMovement()
+    this.localPlayerPredictor.pushLocalInput(this.inputSeq, movement, 1 / gameConfig.simulation.tickRate)
+    this.debugPanel.setPredictionMetrics(this.localPlayerPredictor.metrics())
 
     void this.serverConnection
       .send({
@@ -255,6 +263,20 @@ export class GameClientApp {
       })
   }
 
+  private reconcileLocalPlayer(message: Extract<ServerMessage, { type: 'state' }>): void {
+    if (this.localPlayerId === null) {
+      return
+    }
+
+    const authoritativePlayer = message.players.find((player) => player.playerId === this.localPlayerId)
+    if (!authoritativePlayer) {
+      return
+    }
+
+    this.localPlayerPredictor.reconcile(authoritativePlayer, message.lastProcessedInputSeq, 1 / gameConfig.simulation.tickRate)
+    this.debugPanel.setPredictionMetrics(this.localPlayerPredictor.metrics())
+  }
+
   private resetSessionState(): void {
     this.connected = false
     this.localPlayerId = null
@@ -266,7 +288,9 @@ export class GameClientApp {
     this.arena.clearPlayers()
     this.arena.clearBoxes()
     this.interpolator.reset()
+    this.localPlayerPredictor.reset()
     this.debugPanel.setServerTick(null)
+    this.debugPanel.setPredictionMetrics(null)
   }
 
   private setButtons(connected: boolean): void {

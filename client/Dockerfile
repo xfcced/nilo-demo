@@ -6,6 +6,7 @@ COPY client/package*.json ./
 RUN npm ci
 
 COPY client ./
+COPY config ../config/
 
 ARG VITE_WEBTRANSPORT_URL=https://wt.yourdomain.com/webtransport
 ARG VITE_CERTIFICATE_HASH=
