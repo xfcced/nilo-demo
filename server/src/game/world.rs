@@ -251,18 +251,20 @@ impl World {
     }
 
     fn spawn_boxes(&mut self) {
-        let grid_size = self.config.boxes.grid_size;
+        let grid_columns = self.config.boxes.grid_columns;
+        let grid_rows = self.config.boxes.grid_rows;
         let spacing = self.config.boxes.spacing;
-        let start = -((grid_size - 1) as f32 * spacing) / 2.0;
+        let start_x = -((grid_columns - 1) as f32 * spacing) / 2.0;
+        let start_z = -((grid_rows - 1) as f32 * spacing) / 2.0;
         let center_z = self.config.boxes.center_z;
         let half_extent = self.config.boxes.half_extent;
         let density = self.config.boxes.density;
         let mut id = 1;
 
-        for row in 0..grid_size {
-            for col in 0..grid_size {
-                let x = start + col as f32 * spacing;
-                let z = center_z + start + row as f32 * spacing;
+        for row in 0..grid_rows {
+            for col in 0..grid_columns {
+                let x = start_x + col as f32 * spacing;
+                let z = center_z + start_z + row as f32 * spacing;
                 let body = RigidBodyBuilder::dynamic()
                     .translation(Vector::new(x, half_extent, z))
                     .linear_damping(0.25)
@@ -390,7 +392,7 @@ mod tests {
     fn box_snapshots_include_initial_dynamic_boxes() {
         let world = World::new(test_config());
         let snapshots = world.box_snapshots();
-        let expected_box_count = world.config.boxes.grid_size * world.config.boxes.grid_size;
+        let expected_box_count = world.config.boxes.grid_columns * world.config.boxes.grid_rows;
 
         assert_eq!(snapshots.len(), expected_box_count as usize);
         assert_eq!(snapshots[0].box_id, 1);

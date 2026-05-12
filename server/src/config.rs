@@ -69,7 +69,8 @@ pub struct PlayerConfig {
 pub struct BoxesConfig {
     pub half_extent: f32,
     pub density: f32,
-    pub grid_size: u32,
+    pub grid_columns: u32,
+    pub grid_rows: u32,
     pub spacing: f32,
     pub center_z: f32,
 }

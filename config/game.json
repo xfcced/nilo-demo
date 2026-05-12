@@ -31,7 +31,8 @@
   "boxes": {
     "halfExtent": 0.45,
     "density": 0.16,
-    "gridSize": 10,
+    "gridColumns": 10,
+    "gridRows": 5,
     "spacing": 1.15,
     "centerZ": 1.4
   },
