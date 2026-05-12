@@ -14,7 +14,7 @@
       </button>
 
       <section id="debugPanel" aria-label="Network debug panel">
-        <div class="panel-title">WebTransport Demo</div>
+        <div class="panel-title">Dev</div>
 
         <label class="field">
           <span>URL</span>
@@ -22,7 +22,7 @@
         </label>
 
         <label class="field">
-          <span>Certificate SHA-256</span>
+          <span>Cert</span>
           <input id="hashInput" value="ded2563223766b2f6b61179c544fc3984a34e678aded1438f4316b837af45050" />
         </label>
 
@@ -31,44 +31,17 @@
           <button id="disconnectButton" disabled>Disconnect</button>
         </div>
 
-        <dl class="metrics">
-          <div>
-            <dt>Connection</dt>
-            <dd id="connectionValue">disconnected</dd>
-          </div>
-          <div>
-            <dt>Player ID</dt>
-            <dd id="playerIdValue">-</dd>
-          </div>
-          <div>
-            <dt>RTT</dt>
-            <dd id="rttValue">-</dd>
-          </div>
-          <div>
-            <dt>FPS</dt>
-            <dd id="fpsValue">-</dd>
-          </div>
-          <div>
-            <dt>Server tick</dt>
-            <dd id="serverTickValue">-</dd>
-          </div>
-          <div>
-            <dt>Recv msgs</dt>
-            <dd id="rxMessageValue">-</dd>
-          </div>
-          <div>
-            <dt>Send msgs</dt>
-            <dd id="txMessageValue">-</dd>
-          </div>
-          <div>
-            <dt>Download</dt>
-            <dd id="downloadValue">-</dd>
-          </div>
-          <div>
-            <dt>Upload</dt>
-            <dd id="uploadValue">-</dd>
-          </div>
-        </dl>
+        <div class="metrics">
+          <div><span>Conn</span><strong id="connectionValue">disconnected</strong></div>
+          <div><span>ID</span><strong id="playerIdValue">-</strong></div>
+          <div><span>RTT</span><strong id="rttValue">-</strong></div>
+          <div><span>FPS</span><strong id="fpsValue">-</strong></div>
+          <div><span>Tick</span><strong id="serverTickValue">-</strong></div>
+          <div><span>Rx</span><strong id="rxMessageValue">-</strong></div>
+          <div><span>Tx</span><strong id="txMessageValue">-</strong></div>
+          <div><span>Down</span><strong id="downloadValue">-</strong></div>
+          <div><span>Up</span><strong id="uploadValue">-</strong></div>
+        </div>
 
         <pre id="log"></pre>
       </section>
