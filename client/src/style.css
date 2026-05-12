@@ -32,7 +32,7 @@ input {
 
 #debugPanel {
   position: fixed;
-  top: 12px;
+  top: 52px;
   left: 12px;
   width: min(320px, calc(100vw - 24px));
   display: grid;
@@ -45,10 +45,26 @@ input {
   backdrop-filter: blur(10px);
 }
 
+#debugPanel[hidden] {
+  display: none;
+}
+
 .panel-title {
   color: #1f2b33;
   font-size: 14px;
   font-weight: 700;
+}
+
+.debug-toggle {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 2;
+  min-width: 88px;
+  border-color: rgb(31 43 51 / 72%);
+  color: #ffffff;
+  background: rgb(31 43 51 / 88%);
+  box-shadow: 0 10px 30px rgb(28 38 46 / 14%);
 }
 
 .field {
@@ -160,10 +176,15 @@ dd {
 
 @media (max-width: 620px) {
   #debugPanel {
-    top: 8px;
+    top: 48px;
     left: 8px;
     width: calc(100vw - 16px);
     padding: 10px;
+  }
+
+  .debug-toggle {
+    top: 8px;
+    left: 8px;
   }
 
   .metrics {

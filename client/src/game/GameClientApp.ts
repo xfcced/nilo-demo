@@ -7,7 +7,8 @@ import { GameConnection } from './net/GameConnection'
 import { SnapshotInterpolator } from './sync/SnapshotInterpolator'
 import { DebugPanel } from './ui/DebugPanel'
 
-const FIXED_STEP_MS = 1000 / 60
+const CLIENT_TICK_RATE = 30
+const FIXED_STEP_MS = 1000 / CLIENT_TICK_RATE
 const MAX_FRAME_MS = 250
 const PING_SEND_MS = 1000
 const FPS_SAMPLE_MS = 500

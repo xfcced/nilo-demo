@@ -10,6 +10,8 @@ export type NetworkStats = {
 }
 
 type DebugPanelElements = {
+  panel: HTMLElement
+  toggleButton: HTMLButtonElement
   connectionValue: HTMLElement
   playerIdValue: HTMLElement
   rttValue: HTMLElement
@@ -24,9 +26,12 @@ type DebugPanelElements = {
 
 export class DebugPanel {
   private elements: DebugPanelElements
+  private visible = true
 
   constructor() {
     this.elements = {
+      panel: getElement('debugPanel'),
+      toggleButton: getElement('debugToggle'),
       connectionValue: getElement('connectionValue'),
       playerIdValue: getElement('playerIdValue'),
       rttValue: getElement('rttValue'),
@@ -38,6 +43,17 @@ export class DebugPanel {
       uploadValue: getElement('uploadValue'),
       log: getElement('log'),
     }
+
+    this.elements.toggleButton.addEventListener('click', () => {
+      this.setVisible(!this.visible)
+    })
+  }
+
+  private setVisible(visible: boolean): void {
+    this.visible = visible
+    this.elements.panel.hidden = !visible
+    this.elements.toggleButton.textContent = visible ? 'Hide Dev' : 'Show Dev'
+    this.elements.toggleButton.setAttribute('aria-expanded', String(visible))
   }
 
   setConnection(state: ConnectionState): void {
