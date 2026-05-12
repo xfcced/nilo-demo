@@ -1,14 +1,13 @@
 use super::protocol::{BoxSnapshot, PlayerSnapshot};
 use super::world::World;
+use crate::config::GameConfig;
 use std::collections::HashMap;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-#[derive(Default)]
 pub struct Room {
     state: Mutex<RoomState>,
 }
 
-#[derive(Default)]
 struct RoomState {
     players: HashMap<u64, Player>,
     world: World,
@@ -36,9 +35,13 @@ pub struct RoomSnapshot {
 }
 
 impl Room {
-    pub fn new() -> Self {
+    pub fn new(config: Arc<GameConfig>) -> Self {
         Self {
-            state: Mutex::new(RoomState::default()),
+            state: Mutex::new(RoomState {
+                players: HashMap::new(),
+                world: World::new(config),
+                server_tick: 0,
+            }),
         }
     }
 

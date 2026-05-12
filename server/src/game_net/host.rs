@@ -2,6 +2,7 @@ use super::binary::{decode_input, encode_state, BinaryState};
 use super::framing::{
     outbound_frame_queue, write_framed_messages, FramedStreamReader, OutboundFrameSender,
 };
+use crate::config::ProtocolConfig;
 use crate::game::protocol::{ClientMessage, ServerMessage};
 use crate::game::room::RoomSnapshot;
 use crate::net::{
@@ -38,6 +39,7 @@ pub struct GameNetworkHost {
     listener: Arc<Mutex<Option<WebTransportListener>>>,
     connections: ConnectionManager,
     reliable_channels: Arc<Mutex<HashMap<ChannelKey, OutboundFrameSender>>>,
+    protocol: Arc<ProtocolConfig>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -55,12 +57,18 @@ impl GameNetworkHost {
         game_net_event_queue()
     }
 
-    pub fn new(port: u16, identity: Identity, path: &str) -> Result<Self> {
+    pub fn new(
+        port: u16,
+        identity: Identity,
+        path: &str,
+        protocol: Arc<ProtocolConfig>,
+    ) -> Result<Self> {
         let listener = WebTransportListener::new(port, identity, path)?;
         Ok(Self {
             listener: Arc::new(Mutex::new(Some(listener))),
             connections: ConnectionManager::new(),
             reliable_channels: Arc::new(Mutex::new(HashMap::new())),
+            protocol,
         })
     }
 
@@ -112,6 +120,8 @@ impl GameNetworkHost {
             server_tick: snapshot.server_tick,
             players: &snapshot.players,
             boxes: &snapshot.boxes,
+            position_scale: self.protocol.position_scale,
+            quaternion_scale: self.protocol.quaternion_scale,
         })
         .context("failed to encode state datagram")?;
 

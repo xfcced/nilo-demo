@@ -17,6 +17,22 @@ This phase establishes the minimum server-authoritative multiplayer physics demo
 
 No client prediction, lobby, chat, gameplay datagram sync, goal scoring, or multi-scene abstraction is included yet.
 
+## Shared Config
+
+Client and server read shared gameplay settings from:
+
+```text
+config/game.json
+```
+
+This includes the WebTransport path/default port, simulation tick rate, arena dimensions, player movement rules, box spawn rules, interpolation settings, and binary protocol quantization scales.
+
+The server loads this file on startup. Override the path with:
+
+```bash
+GAME_CONFIG_FILE=/path/to/game.json cargo run
+```
+
 ## Run The Server
 
 ```bash

@@ -1,8 +1,8 @@
 import * as THREE from 'three'
+import { gameConfig } from './config'
 import type { RenderBox, RenderPlayer, RenderWorldState } from './renderState'
 
 export class ArenaScene {
-  private static readonly ARENA_HALF_SIZE = 12
   private renderer: THREE.WebGLRenderer
   private scene: THREE.Scene
   private camera: THREE.PerspectiveCamera
@@ -130,19 +130,21 @@ export class ArenaScene {
     keyLight.position.set(6, 10, 8)
     this.scene.add(keyLight)
 
-    const arenaSize = ArenaScene.ARENA_HALF_SIZE * 2
-    const wallSpan = arenaSize + 0.4
+    const { arena } = gameConfig
+    const arenaSize = arena.halfSize * 2
+    const wallSpan = arenaSize + arena.wallThickness * 2
+    const floorHalfThickness = arena.floorThickness / 2
 
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(arenaSize, 0.24, arenaSize), new THREE.MeshStandardMaterial({ color: 0xf7f9fb, roughness: 0.82 }))
-    floor.position.y = -0.12
+    const floor = new THREE.Mesh(new THREE.BoxGeometry(arenaSize, arena.floorThickness, arenaSize), new THREE.MeshStandardMaterial({ color: 0xf7f9fb, roughness: 0.82 }))
+    floor.position.y = -floorHalfThickness
     this.scene.add(floor)
 
-    this.addWall(0, 0.55, -ArenaScene.ARENA_HALF_SIZE, wallSpan, 1.1, 0.24)
-    this.addWall(0, 0.55, ArenaScene.ARENA_HALF_SIZE, wallSpan, 1.1, 0.24)
-    this.addWall(-ArenaScene.ARENA_HALF_SIZE, 0.55, 0, 0.24, 1.1, wallSpan)
-    this.addWall(ArenaScene.ARENA_HALF_SIZE, 0.55, 0, 0.24, 1.1, wallSpan)
+    this.addWall(0, arena.wallHeight / 2, -arena.halfSize, wallSpan, arena.wallHeight, arena.wallThickness)
+    this.addWall(0, arena.wallHeight / 2, arena.halfSize, wallSpan, arena.wallHeight, arena.wallThickness)
+    this.addWall(-arena.halfSize, arena.wallHeight / 2, 0, arena.wallThickness, arena.wallHeight, wallSpan)
+    this.addWall(arena.halfSize, arena.wallHeight / 2, 0, arena.wallThickness, arena.wallHeight, wallSpan)
 
-    this.addGoalZone(8.5, 0.01, 8.5)
+    this.addGoalZone(arena.goalZone.x, arena.goalZone.y, arena.goalZone.z)
   }
 
   private addWall(x: number, y: number, z: number, width: number, height: number, depth: number): void {
@@ -152,20 +154,21 @@ export class ArenaScene {
   }
 
   private addGoalZone(x: number, y: number, z: number): void {
-    const zone = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 0.04, 48), new THREE.MeshStandardMaterial({ color: 0x2f83cc, transparent: true, opacity: 0.46 }))
+    const { radius, height } = gameConfig.arena.goalZone
+    const zone = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 48), new THREE.MeshStandardMaterial({ color: 0x2f83cc, transparent: true, opacity: 0.46 }))
     zone.position.set(x, y, z)
     this.scene.add(zone)
   }
 
   private createPlayer(isLocal: boolean): THREE.Mesh {
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.42, 32, 24), new THREE.MeshStandardMaterial({ color: isLocal ? 0x2f6fda : 0xb55f4d, roughness: 0.55 }))
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(gameConfig.player.radius, 32, 24), new THREE.MeshStandardMaterial({ color: isLocal ? 0x2f6fda : 0xb55f4d, roughness: 0.55 }))
     return mesh
   }
 
   private createBox(boxId: number): THREE.Mesh {
     const colors = [0xb55f4d, 0xd8a640, 0x4a8b74]
     return new THREE.Mesh(
-      new THREE.BoxGeometry(0.9, 0.9, 0.9),
+      new THREE.BoxGeometry(gameConfig.boxes.halfExtent * 2, gameConfig.boxes.halfExtent * 2, gameConfig.boxes.halfExtent * 2),
       new THREE.MeshStandardMaterial({
         color: colors[(boxId - 1) % colors.length],
         roughness: 0.7,

@@ -3,13 +3,11 @@ import { KeyboardInput } from '../engine/KeyboardInput'
 import type { TransportCounters } from '../engine/WebTransportClient'
 import { type AppElements, getAppElements } from './appElements'
 import { ArenaScene } from './ArenaScene'
+import { defaultWebTransportUrl, gameConfig } from './config'
 import { GameConnection } from './net/GameConnection'
 import { SnapshotInterpolator } from './sync/SnapshotInterpolator'
 import { DebugPanel } from './ui/DebugPanel'
 
-const CLIENT_TICK_RATE = 30
-const FIXED_STEP_MS = 1000 / CLIENT_TICK_RATE
-const MAX_FRAME_MS = 250
 const PING_SEND_MS = 1000
 const FPS_SAMPLE_MS = 500
 const NETWORK_STATS_SAMPLE_MS = 1000
@@ -34,11 +32,12 @@ export class GameClientApp {
   private previousNetworkCounters: TransportCounters | null = null
 
   constructor(private elements: AppElements = getAppElements()) {
+    this.elements.urlInput.value = defaultWebTransportUrl()
     this.applyBuildDefaults()
     this.arena = new ArenaScene(elements.canvas)
     this.gameLoop = new GameLoop({
-      fixedStepMs: FIXED_STEP_MS,
-      maxFrameMs: MAX_FRAME_MS,
+      fixedStepMs: 1000 / gameConfig.simulation.tickRate,
+      maxFrameMs: gameConfig.simulation.maxFrameMs,
       update: (deltaMs) => this.fixedUpdate(deltaMs),
       drawFrame: (frameMs) => this.render(frameMs),
     })

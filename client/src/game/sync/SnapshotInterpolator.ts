@@ -1,13 +1,9 @@
 import * as THREE from 'three'
+import { gameConfig } from '../config'
 import type { BoxSnapshot, PlayerSnapshot, ServerMessage } from '../net/protocol'
 import type { RenderBox, RenderPlayer, RenderWorldState } from '../renderState'
 
-const SERVER_TICK_RATE = 30
-const SERVER_TICK_MS = 1000 / SERVER_TICK_RATE
-const INTERPOLATION_DELAY_TICKS = 3
-const MAX_SAMPLES_PER_ENTITY = 20
-const ENTITY_EXPIRE_TICKS = 8
-const BOX_HOLD_SAMPLE_INTERVAL_TICKS = 4
+const SERVER_TICK_MS = 1000 / gameConfig.simulation.tickRate
 
 type StateMessage = Extract<ServerMessage, { type: 'state' }>
 
@@ -48,7 +44,7 @@ export class SnapshotInterpolator {
     }
 
     const elapsedTicks = (nowMs - this.latestSnapshotReceivedAtMs) / SERVER_TICK_MS
-    const renderTick = this.latestSnapshot.serverTick + elapsedTicks - INTERPOLATION_DELAY_TICKS
+    const renderTick = this.latestSnapshot.serverTick + elapsedTicks - gameConfig.interpolation.delayTicks
     const players: RenderPlayer[] = []
     const boxes: RenderBox[] = []
 
@@ -125,21 +121,21 @@ function appendBoxHoldSamples(samples: BoxSample[], incomingTick: number): void 
     return
   }
 
-  const firstHoldTick = Math.max(latest.serverTick + 1, incomingTick - BOX_HOLD_SAMPLE_INTERVAL_TICKS)
+  const firstHoldTick = Math.max(latest.serverTick + 1, incomingTick - gameConfig.interpolation.boxHoldSampleIntervalTicks)
   for (let serverTick = firstHoldTick; serverTick < incomingTick; serverTick += 1) {
     samples.push({ ...latest, serverTick })
   }
 }
 
 function trimSamples<T>(samples: T[]): void {
-  if (samples.length > MAX_SAMPLES_PER_ENTITY) {
-    samples.splice(0, samples.length - MAX_SAMPLES_PER_ENTITY)
+  if (samples.length > gameConfig.interpolation.maxSamplesPerEntity) {
+    samples.splice(0, samples.length - gameConfig.interpolation.maxSamplesPerEntity)
   }
 }
 
 function isExpired(samples: Array<{ serverTick: number }>, renderTick: number): boolean {
   const latest = samples.at(-1)
-  return !latest || renderTick - latest.serverTick > ENTITY_EXPIRE_TICKS
+  return !latest || renderTick - latest.serverTick > gameConfig.interpolation.entityExpireTicks
 }
 
 function samplePlayer(samples: PlayerSample[], renderTick: number): RenderPlayer | null {

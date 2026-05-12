@@ -10,8 +10,6 @@ const INPUT_BYTES: usize = 6;
 const STATE_HEADER_BYTES: usize = 7;
 const PLAYER_BYTES: usize = 7;
 const BOX_BYTES: usize = 14;
-const POSITION_SCALE: f32 = 100.0;
-const QUATERNION_SCALE: f32 = 32767.0;
 const SMALLEST_THREE_RANGE: f32 = std::f32::consts::FRAC_1_SQRT_2;
 static POSITION_CLAMP_LOGGED: AtomicBool = AtomicBool::new(false);
 static QUATERNION_CLAMP_LOGGED: AtomicBool = AtomicBool::new(false);
@@ -27,6 +25,8 @@ pub struct BinaryState<'a> {
     pub server_tick: u64,
     pub players: &'a [PlayerSnapshot],
     pub boxes: &'a [BoxSnapshot],
+    pub position_scale: f32,
+    pub quaternion_scale: f32,
 }
 
 pub fn decode_input(payload: &[u8]) -> Result<BinaryInput> {
@@ -74,16 +74,16 @@ pub fn encode_state(state: BinaryState<'_>) -> Result<Vec<u8>> {
 
     for player in state.players {
         write_u8(&mut payload, player.player_id, "player id")?;
-        write_position(&mut payload, player.x);
-        write_position(&mut payload, player.y);
-        write_position(&mut payload, player.z);
+        write_position(&mut payload, player.x, state.position_scale);
+        write_position(&mut payload, player.y, state.position_scale);
+        write_position(&mut payload, player.z, state.position_scale);
     }
 
     for box_snapshot in state.boxes {
         write_u8(&mut payload, box_snapshot.box_id, "box id")?;
-        write_position(&mut payload, box_snapshot.x);
-        write_position(&mut payload, box_snapshot.y);
-        write_position(&mut payload, box_snapshot.z);
+        write_position(&mut payload, box_snapshot.x, state.position_scale);
+        write_position(&mut payload, box_snapshot.y, state.position_scale);
+        write_position(&mut payload, box_snapshot.z, state.position_scale);
         write_smallest_three_quaternion(
             &mut payload,
             [
@@ -92,6 +92,7 @@ pub fn encode_state(state: BinaryState<'_>) -> Result<Vec<u8>> {
                 box_snapshot.qz,
                 box_snapshot.qw,
             ],
+            state.quaternion_scale,
         );
     }
 
@@ -115,13 +116,13 @@ fn write_u8(payload: &mut Vec<u8>, value: u64, label: &str) -> Result<()> {
     Ok(())
 }
 
-fn write_position(payload: &mut Vec<u8>, meters: f32) {
+fn write_position(payload: &mut Vec<u8>, meters: f32, scale: f32) {
     payload.extend_from_slice(
-        &quantize_i16(meters, POSITION_SCALE, &POSITION_CLAMP_LOGGED, "position").to_be_bytes(),
+        &quantize_i16(meters, scale, &POSITION_CLAMP_LOGGED, "position").to_be_bytes(),
     );
 }
 
-fn write_smallest_three_quaternion(payload: &mut Vec<u8>, quaternion: [f32; 4]) {
+fn write_smallest_three_quaternion(payload: &mut Vec<u8>, quaternion: [f32; 4], scale: f32) {
     let mut largest_index = 0;
     let mut largest_abs = quaternion[0].abs();
     for (index, component) in quaternion.iter().enumerate().skip(1) {
@@ -143,13 +144,7 @@ fn write_smallest_three_quaternion(payload: &mut Vec<u8>, quaternion: [f32; 4]) 
         }
         let scaled = (*component * sign) / SMALLEST_THREE_RANGE;
         payload.extend_from_slice(
-            &quantize_i16(
-                scaled,
-                QUATERNION_SCALE,
-                &QUATERNION_CLAMP_LOGGED,
-                "quaternion",
-            )
-            .to_be_bytes(),
+            &quantize_i16(scaled, scale, &QUATERNION_CLAMP_LOGGED, "quaternion").to_be_bytes(),
         );
     }
 }
@@ -216,6 +211,8 @@ mod tests {
             server_tick: 100,
             players: &players,
             boxes: &boxes,
+            position_scale: 100.0,
+            quaternion_scale: 32767.0,
         })
         .unwrap();
 

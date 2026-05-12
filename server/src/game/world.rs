@@ -1,18 +1,9 @@
 use super::protocol::{BoxSnapshot, PlayerSnapshot};
 use super::room::PlayerInput;
+use crate::config::GameConfig;
 use rapier3d::prelude::*;
 use std::collections::HashMap;
-
-const ARENA_HALF_SIZE: f32 = 12.0;
-const WALL_HEIGHT: f32 = 1.1;
-const WALL_THICKNESS: f32 = 0.24;
-const PLAYER_RADIUS: f32 = 0.42;
-const PLAYER_CENTER_Y: f32 = 0.34;
-const PLAYER_MAX_SPEED: f32 = 10.0;
-const PLAYER_ACCELERATION: f32 = 92.0;
-const PLAYER_DECELERATION: f32 = 56.0;
-const BOX_HALF_EXTENT: f32 = 0.45;
-const BOX_DENSITY: f32 = 0.16;
+use std::sync::Arc;
 
 pub struct World {
     pipeline: PhysicsPipeline,
@@ -28,6 +19,7 @@ pub struct World {
     ccd_solver: CCDSolver,
     players: HashMap<u64, RigidBodyHandle>,
     boxes: Vec<BoxBody>,
+    config: Arc<GameConfig>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -37,7 +29,7 @@ struct BoxBody {
 }
 
 impl World {
-    pub fn new() -> Self {
+    pub fn new(config: Arc<GameConfig>) -> Self {
         let mut world = Self {
             pipeline: PhysicsPipeline::new(),
             gravity: Vector::new(0.0, -9.81, 0.0),
@@ -52,6 +44,7 @@ impl World {
             ccd_solver: CCDSolver::new(),
             players: HashMap::new(),
             boxes: Vec::new(),
+            config,
         };
 
         world.build_static_arena();
@@ -68,12 +61,12 @@ impl World {
         let x = ((spawn_index % 5.0) - 2.0) * 1.2;
         let z = -3.2 + (spawn_index / 5.0).floor() * 1.2;
         let body = RigidBodyBuilder::dynamic()
-            .translation(Vector::new(x, PLAYER_CENTER_Y, z))
+            .translation(Vector::new(x, self.config.player.center_y, z))
             .lock_rotations()
             .linear_damping(2.5)
             .build();
         let body_handle = self.bodies.insert(body);
-        let collider = ColliderBuilder::ball(PLAYER_RADIUS)
+        let collider = ColliderBuilder::ball(self.config.player.radius)
             .friction(1.0)
             .restitution(0.0)
             .build();
@@ -127,12 +120,12 @@ impl World {
             dz /= length;
         }
 
-        let target_x = dx * PLAYER_MAX_SPEED;
-        let target_z = dz * PLAYER_MAX_SPEED;
+        let target_x = dx * self.config.player.max_speed;
+        let target_z = dz * self.config.player.max_speed;
         let acceleration = if length > 0.0 {
-            PLAYER_ACCELERATION
+            self.config.player.acceleration
         } else {
-            PLAYER_DECELERATION
+            self.config.player.deceleration
         };
         let max_delta = acceleration * delta_seconds;
         let velocity = body.linvel();
@@ -202,38 +195,50 @@ impl World {
     }
 
     fn build_static_arena(&mut self) {
-        self.add_fixed_cuboid(0.0, -0.12, 0.0, ARENA_HALF_SIZE, 0.12, ARENA_HALF_SIZE);
+        let arena_half_size = self.config.arena.half_size;
+        let wall_height = self.config.arena.wall_height;
+        let wall_thickness = self.config.arena.wall_thickness;
+        let floor_half_thickness = self.config.arena.floor_thickness / 2.0;
+
         self.add_fixed_cuboid(
             0.0,
-            WALL_HEIGHT / 2.0,
-            -ARENA_HALF_SIZE,
-            ARENA_HALF_SIZE + WALL_THICKNESS,
-            WALL_HEIGHT / 2.0,
-            WALL_THICKNESS / 2.0,
+            -floor_half_thickness,
+            0.0,
+            arena_half_size,
+            floor_half_thickness,
+            arena_half_size,
         );
         self.add_fixed_cuboid(
             0.0,
-            WALL_HEIGHT / 2.0,
-            ARENA_HALF_SIZE,
-            ARENA_HALF_SIZE + WALL_THICKNESS,
-            WALL_HEIGHT / 2.0,
-            WALL_THICKNESS / 2.0,
+            wall_height / 2.0,
+            -arena_half_size,
+            arena_half_size + wall_thickness,
+            wall_height / 2.0,
+            wall_thickness / 2.0,
         );
         self.add_fixed_cuboid(
-            -ARENA_HALF_SIZE,
-            WALL_HEIGHT / 2.0,
             0.0,
-            WALL_THICKNESS / 2.0,
-            WALL_HEIGHT / 2.0,
-            ARENA_HALF_SIZE + WALL_THICKNESS,
+            wall_height / 2.0,
+            arena_half_size,
+            arena_half_size + wall_thickness,
+            wall_height / 2.0,
+            wall_thickness / 2.0,
         );
         self.add_fixed_cuboid(
-            ARENA_HALF_SIZE,
-            WALL_HEIGHT / 2.0,
+            -arena_half_size,
+            wall_height / 2.0,
             0.0,
-            WALL_THICKNESS / 2.0,
-            WALL_HEIGHT / 2.0,
-            ARENA_HALF_SIZE + WALL_THICKNESS,
+            wall_thickness / 2.0,
+            wall_height / 2.0,
+            arena_half_size + wall_thickness,
+        );
+        self.add_fixed_cuboid(
+            arena_half_size,
+            wall_height / 2.0,
+            0.0,
+            wall_thickness / 2.0,
+            wall_height / 2.0,
+            arena_half_size + wall_thickness,
         );
     }
 
@@ -246,10 +251,12 @@ impl World {
     }
 
     fn spawn_boxes(&mut self) {
-        let grid_size = 10;
-        let spacing = 1.15;
+        let grid_size = self.config.boxes.grid_size;
+        let spacing = self.config.boxes.spacing;
         let start = -((grid_size - 1) as f32 * spacing) / 2.0;
-        let center_z = 1.4;
+        let center_z = self.config.boxes.center_z;
+        let half_extent = self.config.boxes.half_extent;
+        let density = self.config.boxes.density;
         let mut id = 1;
 
         for row in 0..grid_size {
@@ -257,17 +264,16 @@ impl World {
                 let x = start + col as f32 * spacing;
                 let z = center_z + start + row as f32 * spacing;
                 let body = RigidBodyBuilder::dynamic()
-                    .translation(Vector::new(x, BOX_HALF_EXTENT, z))
+                    .translation(Vector::new(x, half_extent, z))
                     .linear_damping(0.25)
                     .angular_damping(0.35)
                     .build();
                 let body_handle = self.bodies.insert(body);
-                let collider =
-                    ColliderBuilder::cuboid(BOX_HALF_EXTENT, BOX_HALF_EXTENT, BOX_HALF_EXTENT)
-                        .friction(0.55)
-                        .restitution(0.05)
-                        .density(BOX_DENSITY)
-                        .build();
+                let collider = ColliderBuilder::cuboid(half_extent, half_extent, half_extent)
+                    .friction(0.55)
+                    .restitution(0.05)
+                    .density(density)
+                    .build();
                 self.colliders
                     .insert_with_parent(collider, body_handle, &mut self.bodies);
                 self.boxes.push(BoxBody {
@@ -289,19 +295,18 @@ fn move_toward(current: f32, target: f32, max_delta: f32) -> f32 {
     }
 }
 
-impl Default for World {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::load_game_config;
+
+    fn test_config() -> Arc<GameConfig> {
+        Arc::new(load_game_config().unwrap())
+    }
 
     #[test]
     fn player_input_moves_player_in_physics_world() {
-        let mut world = World::new();
+        let mut world = World::new(test_config());
         world.spawn_player(1);
         let before = world.player_snapshots()[0].x;
 
@@ -323,7 +328,7 @@ mod tests {
 
     #[test]
     fn player_input_accelerates_toward_target_speed() {
-        let mut world = World::new();
+        let mut world = World::new(test_config());
         world.spawn_player(1);
         world.apply_player_input(
             1,
@@ -340,13 +345,13 @@ mod tests {
             .expect("missing player body");
 
         assert!(player.linvel().x > 0.0);
-        assert!(player.linvel().x < PLAYER_MAX_SPEED);
+        assert!(player.linvel().x < world.config.player.max_speed);
         assert!(player.linvel().z.abs() < 0.001);
     }
 
     #[test]
     fn player_without_input_decelerates_toward_zero() {
-        let mut world = World::new();
+        let mut world = World::new(test_config());
         world.spawn_player(1);
 
         for _ in 0..20 {
@@ -383,11 +388,15 @@ mod tests {
 
     #[test]
     fn box_snapshots_include_initial_dynamic_boxes() {
-        let world = World::new();
+        let world = World::new(test_config());
         let snapshots = world.box_snapshots();
+        let expected_box_count = world.config.boxes.grid_size * world.config.boxes.grid_size;
 
-        assert_eq!(snapshots.len(), 100);
+        assert_eq!(snapshots.len(), expected_box_count as usize);
         assert_eq!(snapshots[0].box_id, 1);
-        assert_eq!(snapshots[99].box_id, 100);
+        assert_eq!(
+            snapshots.last().expect("missing final box").box_id,
+            expected_box_count as u64
+        );
     }
 }

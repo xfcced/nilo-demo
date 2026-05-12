@@ -1,3 +1,5 @@
+import { gameConfig } from '../config'
+
 export type ClientMessage = { type: 'join' } | { type: 'ping'; pingSeq: number } | { type: 'input'; seq: number; up: boolean; down: boolean; left: boolean; right: boolean }
 
 export type ServerMessage =
@@ -30,8 +32,6 @@ const INPUT_BYTES = 6
 const STATE_HEADER_BYTES = 7
 const PLAYER_BYTES = 7
 const BOX_BYTES = 14
-const POSITION_SCALE = 100
-const QUATERNION_SCALE = 32767
 const SMALLEST_THREE_RANGE = Math.SQRT1_2
 
 export function encodeClientMessage(message: ClientMessage): string {
@@ -177,11 +177,11 @@ function encodeButtons(message: Extract<ClientMessage, { type: 'input' }>): numb
 }
 
 function readPosition(view: DataView, offset: number): number {
-  return view.getInt16(offset, false) / POSITION_SCALE
+  return view.getInt16(offset, false) / gameConfig.protocol.positionScale
 }
 
 function readQuaternion(view: DataView, offset: number): number {
-  return (view.getInt16(offset, false) / QUATERNION_SCALE) * SMALLEST_THREE_RANGE
+  return (view.getInt16(offset, false) / gameConfig.protocol.quaternionScale) * SMALLEST_THREE_RANGE
 }
 
 function readSmallestThreeQuaternion(view: DataView, offset: number): Pick<BoxSnapshot, 'qx' | 'qy' | 'qz' | 'qw'> {

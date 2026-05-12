@@ -1,8 +1,10 @@
+mod config;
 mod game;
 mod game_net;
 mod net;
 
 use anyhow::{Context, Result};
+use config::{load_game_config, GameConfig};
 use game::room::Room;
 use game::server_host::ServerHost;
 use std::env;
@@ -11,10 +13,8 @@ use tracing::info;
 use wtransport::tls::Sha256DigestFmt;
 use wtransport::Identity;
 
-const DEFAULT_PORT: u16 = 4433;
 const DEFAULT_CERT_FILE: &str = "certs/localhost.pem";
 const DEFAULT_KEY_FILE: &str = "certs/localhost-key.pem";
-const WEBTRANSPORT_PATH: &str = "/webtransport";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -25,19 +25,20 @@ async fn main() -> Result<()> {
         )
         .init();
 
-    let settings = ServerSettings::from_env()?;
+    let config = Arc::new(load_game_config()?);
+    let settings = ServerSettings::from_env(&config)?;
     let identity = load_or_create_identity(&settings).await?;
     print_certificate_hash(&identity);
 
-    let room = Arc::new(Room::new());
-    let server = ServerHost::new(settings.port, identity, room)?;
+    let room = Arc::new(Room::new(Arc::clone(&config)));
+    let server = ServerHost::new(settings.port, identity, room, Arc::clone(&config))?;
     let addr = server.local_addr()?;
 
     info!("server ready");
     println!(
         "WebTransport URL: https://localhost:{}{}",
         addr.port(),
-        WEBTRANSPORT_PATH
+        config.network.web_transport_path
     );
 
     server.serve().await
@@ -51,12 +52,12 @@ struct ServerSettings {
 }
 
 impl ServerSettings {
-    fn from_env() -> Result<Self> {
+    fn from_env(config: &GameConfig) -> Result<Self> {
         let port = match env::var("PORT") {
             Ok(value) => value
                 .parse::<u16>()
                 .with_context(|| format!("invalid PORT value: {value}"))?,
-            Err(_) => DEFAULT_PORT,
+            Err(_) => config.network.default_port,
         };
 
         let cert_file = env::var("TLS_CERT_FILE").unwrap_or_else(|_| DEFAULT_CERT_FILE.to_string());

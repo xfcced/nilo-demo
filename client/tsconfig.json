@@ -9,7 +9,8 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "resolveJsonModule": true
   },
-  "include": ["src"]
+  "include": ["src", "../config/game.json"]
 }

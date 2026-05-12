@@ -1,0 +1,48 @@
+{
+  "network": {
+    "webTransportPath": "/webtransport",
+    "defaultPort": 4433
+  },
+  "simulation": {
+    "tickRate": 30,
+    "maxFrameMs": 250,
+    "maxTicksPerFrame": 8
+  },
+  "arena": {
+    "halfSize": 12,
+    "wallHeight": 1.1,
+    "wallThickness": 0.24,
+    "floorThickness": 0.24,
+    "goalZone": {
+      "x": 8.5,
+      "y": 0.01,
+      "z": 8.5,
+      "radius": 1.25,
+      "height": 0.04
+    }
+  },
+  "player": {
+    "radius": 0.42,
+    "centerY": 0.34,
+    "maxSpeed": 10,
+    "acceleration": 92,
+    "deceleration": 56
+  },
+  "boxes": {
+    "halfExtent": 0.45,
+    "density": 0.16,
+    "gridSize": 10,
+    "spacing": 1.15,
+    "centerZ": 1.4
+  },
+  "interpolation": {
+    "delayTicks": 3,
+    "maxSamplesPerEntity": 20,
+    "entityExpireTicks": 8,
+    "boxHoldSampleIntervalTicks": 4
+  },
+  "protocol": {
+    "positionScale": 100,
+    "quaternionScale": 32767
+  }
+}

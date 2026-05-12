@@ -1,5 +1,6 @@
 use super::protocol::{BoxSnapshot, ClientMessage, ServerMessage};
 use super::room::{PlayerInput, Room};
+use crate::config::GameConfig;
 use crate::game_net::host::{GameNetEvent, GameNetEventReceiver, GameNetworkHost};
 use crate::net::ConnectionId;
 use anyhow::Result;
@@ -11,20 +12,30 @@ use tokio::time::{self, Instant};
 use tracing::{error, info};
 use wtransport::Identity;
 
-const WEBTRANSPORT_PATH: &str = "/webtransport";
-const TICK_RATE: f32 = 30.0;
-const MAX_FRAME_TIME: Duration = Duration::from_millis(250);
-const MAX_TICKS_PER_FRAME: usize = 8;
-
 pub struct ServerHost {
     network: GameNetworkHost,
     room: Arc<Room>,
+    config: Arc<GameConfig>,
 }
 
 impl ServerHost {
-    pub fn new(port: u16, identity: Identity, room: Arc<Room>) -> Result<Self> {
-        let network = GameNetworkHost::new(port, identity, WEBTRANSPORT_PATH)?;
-        Ok(Self { network, room })
+    pub fn new(
+        port: u16,
+        identity: Identity,
+        room: Arc<Room>,
+        config: Arc<GameConfig>,
+    ) -> Result<Self> {
+        let network = GameNetworkHost::new(
+            port,
+            identity,
+            &config.network.web_transport_path,
+            Arc::new(config.protocol.clone()),
+        )?;
+        Ok(Self {
+            network,
+            room,
+            config,
+        })
     }
 
     pub fn local_addr(&self) -> Result<SocketAddr> {
@@ -36,8 +47,15 @@ impl ServerHost {
 
         let tick_room = Arc::clone(&self.room);
         let tick_network = self.network.clone();
+        let tick_config = Arc::clone(&self.config);
         tokio::spawn(async move {
-            run_room_tick(tick_room, tick_network, StateDeltaTracker::new()).await;
+            run_room_tick(
+                tick_room,
+                tick_network,
+                StateDeltaTracker::new(Arc::clone(&tick_config)),
+                tick_config,
+            )
+            .await;
         });
 
         let event_room = Arc::clone(&self.room);
@@ -146,27 +164,31 @@ async fn run_room_tick(
     room: Arc<Room>,
     network: GameNetworkHost,
     mut delta_tracker: StateDeltaTracker,
+    config: Arc<GameConfig>,
 ) {
-    let tick_duration = Duration::from_secs_f32(1.0 / TICK_RATE);
+    let tick_duration = Duration::from_secs_f32(1.0 / config.simulation.tick_rate);
+    let max_frame_time = Duration::from_millis(config.simulation.max_frame_ms);
     let mut previous_time = Instant::now();
     let mut accumulator = Duration::ZERO;
 
     loop {
         let now = Instant::now();
-        let frame_time = now.duration_since(previous_time).min(MAX_FRAME_TIME);
+        let frame_time = now.duration_since(previous_time).min(max_frame_time);
         previous_time = now;
         accumulator += frame_time;
 
         let mut ticks_this_frame = 0;
-        while accumulator >= tick_duration && ticks_this_frame < MAX_TICKS_PER_FRAME {
-            room.tick(1.0 / TICK_RATE);
+        while accumulator >= tick_duration
+            && ticks_this_frame < config.simulation.max_ticks_per_frame
+        {
+            room.tick(1.0 / config.simulation.tick_rate);
             broadcast_room_state(&room, &network, &mut delta_tracker);
 
             accumulator -= tick_duration;
             ticks_this_frame += 1;
         }
 
-        if ticks_this_frame == MAX_TICKS_PER_FRAME {
+        if ticks_this_frame == config.simulation.max_ticks_per_frame {
             accumulator = Duration::ZERO;
         }
 
@@ -204,13 +226,15 @@ fn broadcast_room_state(
 struct StateDeltaTracker {
     previous_boxes: HashMap<u64, BoxSnapshot>,
     initialized_connections: HashSet<ConnectionId>,
+    config: Arc<GameConfig>,
 }
 
 impl StateDeltaTracker {
-    fn new() -> Self {
+    fn new(config: Arc<GameConfig>) -> Self {
         Self {
             previous_boxes: HashMap::new(),
             initialized_connections: HashSet::new(),
+            config,
         }
     }
 
@@ -221,7 +245,7 @@ impl StateDeltaTracker {
             let changed = self
                 .previous_boxes
                 .get(&box_snapshot.box_id)
-                .is_none_or(|previous| box_changed(previous, &box_snapshot));
+                .is_none_or(|previous| self.box_changed(previous, &box_snapshot));
             self.previous_boxes
                 .insert(box_snapshot.box_id, box_snapshot.clone());
 
@@ -245,29 +269,32 @@ impl StateDeltaTracker {
             changed_boxes.to_vec()
         }
     }
+
+    fn box_changed(&self, previous: &BoxSnapshot, current: &BoxSnapshot) -> bool {
+        let position_scale = self.config.protocol.position_scale;
+        let quaternion_scale = self.config.protocol.quaternion_scale;
+        quantized_changed(previous.x, current.x, position_scale)
+            || quantized_changed(previous.y, current.y, position_scale)
+            || quantized_changed(previous.z, current.z, position_scale)
+            || quantized_changed(previous.qx, current.qx, quaternion_scale)
+            || quantized_changed(previous.qy, current.qy, quaternion_scale)
+            || quantized_changed(previous.qz, current.qz, quaternion_scale)
+            || quantized_changed(previous.qw, current.qw, quaternion_scale)
+    }
 }
 
-fn box_changed(previous: &BoxSnapshot, current: &BoxSnapshot) -> bool {
-    quantized_position_changed(previous.x, current.x)
-        || quantized_position_changed(previous.y, current.y)
-        || quantized_position_changed(previous.z, current.z)
-        || quantized_quaternion_changed(previous.qx, current.qx)
-        || quantized_quaternion_changed(previous.qy, current.qy)
-        || quantized_quaternion_changed(previous.qz, current.qz)
-        || quantized_quaternion_changed(previous.qw, current.qw)
-}
-
-fn quantized_position_changed(previous: f32, current: f32) -> bool {
-    (previous * 100.0).round() as i16 != (current * 100.0).round() as i16
-}
-
-fn quantized_quaternion_changed(previous: f32, current: f32) -> bool {
-    (previous * 32767.0).round() as i16 != (current * 32767.0).round() as i16
+fn quantized_changed(previous: f32, current: f32, scale: f32) -> bool {
+    (previous * scale).round() as i16 != (current * scale).round() as i16
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::load_game_config;
+
+    fn test_config() -> Arc<GameConfig> {
+        Arc::new(load_game_config().unwrap())
+    }
 
     fn box_snapshot(box_id: u64, x: f32) -> BoxSnapshot {
         BoxSnapshot {
@@ -284,7 +311,7 @@ mod tests {
 
     #[test]
     fn delta_tracker_omits_unchanged_boxes() {
-        let mut tracker = StateDeltaTracker::new();
+        let mut tracker = StateDeltaTracker::new(test_config());
         let boxes = vec![box_snapshot(1, 1.0), box_snapshot(2, 2.0)];
 
         let changed = tracker.changed_boxes(&boxes);
@@ -302,7 +329,7 @@ mod tests {
 
     #[test]
     fn delta_tracker_sends_full_boxes_to_new_connections() {
-        let mut tracker = StateDeltaTracker::new();
+        let mut tracker = StateDeltaTracker::new(test_config());
         let all_boxes = vec![box_snapshot(1, 1.0), box_snapshot(2, 2.0)];
         let changed_boxes = Vec::new();
 
