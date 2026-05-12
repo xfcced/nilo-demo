@@ -4,13 +4,14 @@ services:
       context: .
       dockerfile: client/Dockerfile
       args:
-        VITE_WEBTRANSPORT_URL: https://wt.luchang.xyz/webtransport
-        VITE_CERTIFICATE_HASH: ""
+        VITE_WEBTRANSPORT_URL: https://localhost:4433/webtransport
+        VITE_CERTIFICATE_HASH: ded2563223766b2f6b61179c544fc3984a34e678aded1438f4316b837af45050
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./server/certs/localhost.pem:/etc/letsencrypt/live/nilo.luchang.xyz/fullchain.pem:ro
+      - ./server/certs/localhost-key.pem:/etc/letsencrypt/live/nilo.luchang.xyz/privkey.pem:ro
     restart: unless-stopped
 
   server:
@@ -19,10 +20,10 @@ services:
       dockerfile: server/Dockerfile
     environment:
       PORT: "4433"
-      TLS_CERT_FILE: /etc/letsencrypt/live/wt.luchang.xyz/fullchain.pem
-      TLS_KEY_FILE: /etc/letsencrypt/live/wt.luchang.xyz/privkey.pem
+      TLS_CERT_FILE: /certs/localhost.pem
+      TLS_KEY_FILE: /certs/localhost-key.pem
     volumes:
-      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - ./server/certs:/certs:ro
     ports:
-      - "443:4433/udp"
+      - "4433:4433/udp"
     restart: unless-stopped

@@ -29,14 +29,6 @@ pub struct BinaryState<'a> {
     pub boxes: &'a [BoxSnapshot],
 }
 
-pub fn encode_input(input: BinaryInput) -> Vec<u8> {
-    let mut payload = Vec::with_capacity(INPUT_BYTES);
-    payload.push(TYPE_INPUT);
-    payload.extend_from_slice(&input.seq.to_be_bytes());
-    payload.push(encode_buttons(input.input));
-    payload
-}
-
 pub fn decode_input(payload: &[u8]) -> Result<BinaryInput> {
     ensure!(
         payload.len() == INPUT_BYTES,
@@ -104,23 +96,6 @@ pub fn encode_state(state: BinaryState<'_>) -> Result<Vec<u8>> {
     }
 
     Ok(payload)
-}
-
-fn encode_buttons(input: PlayerInput) -> u8 {
-    let mut buttons = 0;
-    if input.up {
-        buttons |= 1 << 0;
-    }
-    if input.down {
-        buttons |= 1 << 1;
-    }
-    if input.left {
-        buttons |= 1 << 2;
-    }
-    if input.right {
-        buttons |= 1 << 3;
-    }
-    buttons
 }
 
 fn decode_buttons(buttons: u8) -> PlayerInput {
@@ -195,19 +170,20 @@ mod tests {
 
     #[test]
     fn input_roundtrip() {
-        let input = BinaryInput {
-            seq: 42,
-            input: PlayerInput {
-                up: true,
-                down: false,
-                left: true,
-                right: false,
-            },
-        };
-
-        let encoded = encode_input(input);
+        let encoded = [TYPE_INPUT, 0, 0, 0, 42, 0b0101];
         assert_eq!(encoded.len(), INPUT_BYTES);
-        assert_eq!(decode_input(&encoded).unwrap(), input);
+        assert_eq!(
+            decode_input(&encoded).unwrap(),
+            BinaryInput {
+                seq: 42,
+                input: PlayerInput {
+                    up: true,
+                    down: false,
+                    left: true,
+                    right: false,
+                },
+            }
+        );
     }
 
     #[test]

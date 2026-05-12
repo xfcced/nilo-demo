@@ -16,6 +16,8 @@ RUN npm run build
 
 FROM nginx:1.27-alpine
 
+RUN mkdir -p /etc/letsencrypt/live/nilo.luchang.xyz
+
 COPY client/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/client/dist /usr/share/nginx/html
 
