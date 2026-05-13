@@ -40,6 +40,7 @@ export class LocalPlayerPredictor {
   private correctionOffsetX = 0
   private correctionOffsetY = 0
   private correctionOffsetZ = 0
+  private correctionElapsedSeconds = CORRECTION_DURATION_SECONDS
   private lastRenderedPosition: PredictedPosition | null = null
   private lastAckedInputSeq = 0
   private predictionError = 0
@@ -62,7 +63,6 @@ export class LocalPlayerPredictor {
     }
 
     this.stepWorld(input, deltaSeconds)
-    this.decayCorrection(deltaSeconds)
   }
 
   // Replays unacknowledged inputs from the latest server-authoritative state.
@@ -98,16 +98,20 @@ export class LocalPlayerPredictor {
       this.correctionOffsetX = 0
       this.correctionOffsetY = 0
       this.correctionOffsetZ = 0
+      this.correctionElapsedSeconds = CORRECTION_DURATION_SECONDS
       return
     }
 
     this.correctionOffsetX = previousRenderedPosition.x - corrected.x
     this.correctionOffsetY = previousRenderedPosition.y - corrected.y
     this.correctionOffsetZ = previousRenderedPosition.z - corrected.z
+    this.correctionElapsedSeconds = 0
   }
 
   // Returns the predicted local player state for rendering.
-  renderPlayer(playerId: number, alpha: number): RenderPlayer | null {
+  renderPlayer(playerId: number, alpha: number, frameSeconds: number): RenderPlayer | null {
+    this.decayCorrection(frameSeconds)
+
     const rendered = this.renderPosition(alpha)
     if (!rendered) {
       return null
@@ -142,6 +146,7 @@ export class LocalPlayerPredictor {
     this.correctionOffsetX = 0
     this.correctionOffsetY = 0
     this.correctionOffsetZ = 0
+    this.correctionElapsedSeconds = CORRECTION_DURATION_SECONDS
     this.lastRenderedPosition = null
     this.lastAckedInputSeq = 0
     this.predictionError = 0
@@ -246,10 +251,27 @@ export class LocalPlayerPredictor {
   }
 
   private decayCorrection(deltaSeconds: number): void {
-    const alpha = Math.min(1, deltaSeconds / CORRECTION_DURATION_SECONDS)
-    this.correctionOffsetX = moveToward(this.correctionOffsetX, 0, Math.abs(this.correctionOffsetX) * alpha)
-    this.correctionOffsetY = moveToward(this.correctionOffsetY, 0, Math.abs(this.correctionOffsetY) * alpha)
-    this.correctionOffsetZ = moveToward(this.correctionOffsetZ, 0, Math.abs(this.correctionOffsetZ) * alpha)
+    if (this.correctionElapsedSeconds >= CORRECTION_DURATION_SECONDS) {
+      return
+    }
+
+    const previousProgress = this.correctionElapsedSeconds / CORRECTION_DURATION_SECONDS
+    this.correctionElapsedSeconds = Math.min(CORRECTION_DURATION_SECONDS, this.correctionElapsedSeconds + deltaSeconds)
+    const currentProgress = this.correctionElapsedSeconds / CORRECTION_DURATION_SECONDS
+    const previousRemaining = 1 - previousProgress
+    const currentRemaining = 1 - currentProgress
+
+    if (currentRemaining <= 0 || previousRemaining <= 0) {
+      this.correctionOffsetX = 0
+      this.correctionOffsetY = 0
+      this.correctionOffsetZ = 0
+      return
+    }
+
+    const scale = currentRemaining / previousRemaining
+    this.correctionOffsetX *= scale
+    this.correctionOffsetY *= scale
+    this.correctionOffsetZ *= scale
   }
 
   private renderPosition(alpha = 0): PredictedPosition | null {

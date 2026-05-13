@@ -175,7 +175,7 @@ export class GameClientApp {
   private render(frameMs: number, alpha: number): void {
     this.updateFps(frameMs)
     this.updateNetworkStats(frameMs)
-    const localPlayer = this.localPlayerId === null ? null : this.localPlayerPredictor.renderPlayer(this.localPlayerId, alpha)
+    const localPlayer = this.localPlayerId === null ? null : this.localPlayerPredictor.renderPlayer(this.localPlayerId, alpha, frameMs / 1000)
     this.arena.applyRenderState(this.interpolator.sample(performance.now(), this.localPlayerId, localPlayer))
     this.arena.render()
   }
