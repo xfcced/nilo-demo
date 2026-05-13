@@ -21,9 +21,9 @@ export class SnapshotInterpolator {
   private latestSnapshot: StateMessage | null = null
   private latestSnapshotReceivedAtMs = 0
 
-  pushSnapshot(snapshot: StateMessage, receivedAtMs: number): void {
+  pushSnapshot(snapshot: StateMessage, receivedAtMs: number): boolean {
     if (this.latestSnapshot && snapshot.serverTick <= this.latestSnapshot.serverTick) {
-      return
+      return false
     }
 
     this.latestSnapshot = snapshot
@@ -36,6 +36,8 @@ export class SnapshotInterpolator {
     for (const box of snapshot.boxes) {
       this.pushBoxSample(box.boxId, { ...box, serverTick: snapshot.serverTick })
     }
+
+    return true
   }
 
   sample(nowMs: number, localPlayerId: number | null, localPlayerOverride: RenderPlayer | null = null): RenderWorldState {

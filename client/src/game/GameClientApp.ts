@@ -98,9 +98,12 @@ export class GameClientApp {
 
       if (message.type === 'state') {
         const receivedAtMs = performance.now()
+        if (!this.interpolator.pushSnapshot(message, receivedAtMs)) {
+          return
+        }
+
         this.debugPanel.setServerTick(message.serverTick)
         this.debugPanel.recordStateReceived(receivedAtMs)
-        this.interpolator.pushSnapshot(message, receivedAtMs)
         this.reconcileLocalPlayer(message)
         return
       }
