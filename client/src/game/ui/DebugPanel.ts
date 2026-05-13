@@ -13,7 +13,7 @@ export type NetworkStats = {
 
 export type PredictionMetrics = {
   pendingInputCount: number
-  lastAckedInputSeq: number
+  lastAckedInputTick: number
   predictionError: number
   correctionCount: number
 }
@@ -161,7 +161,7 @@ export class DebugPanel {
     }
 
     this.elements.pendingInputValue.textContent = String(metrics.pendingInputCount)
-    this.elements.ackSeqValue.textContent = String(metrics.lastAckedInputSeq)
+    this.elements.ackSeqValue.textContent = String(metrics.lastAckedInputTick)
     this.elements.predictionErrorValue.textContent = `${(metrics.predictionError * 100).toFixed(1)} cm`
     this.elements.correctionValue.textContent = String(metrics.correctionCount)
   }

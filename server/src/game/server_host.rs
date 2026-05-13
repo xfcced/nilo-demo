@@ -151,7 +151,7 @@ fn handle_client_message(
             send_message(network, connection_id, ServerMessage::Pong { ping_seq });
         }
         ClientMessage::Input {
-            seq,
+            tick,
             up,
             down,
             left,
@@ -170,7 +170,7 @@ fn handle_client_message(
 
             room.update_input(
                 player_id,
-                seq,
+                tick,
                 PlayerInput {
                     up,
                     down,

@@ -12,13 +12,9 @@ export type MovementInput = {
 
 export type PredictionMetrics = {
   pendingInputCount: number
-  lastAckedInputSeq: number
+  lastAckedInputTick: number
   predictionError: number
   correctionCount: number
-}
-
-type PendingInput = MovementInput & {
-  seq: number
 }
 
 type PredictedPosition = {
@@ -40,7 +36,7 @@ const CORRECTION_DURATION_SECONDS = 0.1
 let rapierReady: Promise<void> | null = null
 
 export class LocalPlayerPredictor {
-  private pendingInputs: PendingInput[] = []
+  private inputHistory = new Map<number, MovementInput>()
   private world: World | null = null
   private playerBody: RigidBody | null = null
   private correctionOffsetX = 0
@@ -49,7 +45,8 @@ export class LocalPlayerPredictor {
   private correctionElapsedSeconds = CORRECTION_DURATION_SECONDS
   private lastAuthoritativePosition: PredictedPosition | null = null
   private lastRenderedPosition: PredictedPosition | null = null
-  private lastAckedInputSeq = 0
+  private lastAckedInputTick = 0
+  private localPredictionTick = 0
   private predictionError = 0
   private correctionCount = 0
   private ready = false
@@ -62,8 +59,9 @@ export class LocalPlayerPredictor {
   }
 
   // Stores local input and immediately predicts one local physics step.
-  pushLocalInput(seq: number, input: MovementInput, deltaSeconds: number): void {
-    this.pendingInputs.push({ seq, ...input })
+  pushLocalInput(tick: number, input: MovementInput, deltaSeconds: number): void {
+    this.localPredictionTick = Math.max(this.localPredictionTick, tick)
+    this.inputHistory.set(tick, { ...input })
 
     if (!this.playerBody || !this.world) {
       return
@@ -73,14 +71,14 @@ export class LocalPlayerPredictor {
   }
 
   // Replays unacknowledged inputs from the latest server-authoritative state.
-  reconcile(authoritative: PlayerSnapshot, lastProcessedInputSeq: number, deltaSeconds: number): void {
+  reconcile(authoritative: PlayerSnapshot, authoritativeTick: number, lastProcessedInputTick: number, deltaSeconds: number): void {
     this.lastAuthoritativePosition = {
       x: authoritative.x,
       y: authoritative.y,
       z: authoritative.z,
     }
-    this.lastAckedInputSeq = Math.max(this.lastAckedInputSeq, lastProcessedInputSeq)
-    this.pendingInputs = this.pendingInputs.filter((input) => input.seq > this.lastAckedInputSeq)
+    this.lastAckedInputTick = Math.max(this.lastAckedInputTick, lastProcessedInputTick)
+    this.trimInputHistory(this.lastAckedInputTick)
 
     if (!this.ready) {
       return
@@ -94,7 +92,11 @@ export class LocalPlayerPredictor {
     const previousPredictedPosition = this.physicsPosition()
     this.resetPlayerToAuthoritative(authoritative)
 
-    for (const input of this.pendingInputs) {
+    for (let tick = authoritativeTick + 1; tick <= this.localPredictionTick; tick += 1) {
+      const input = this.inputHistory.get(tick)
+      if (!input) {
+        continue
+      }
       this.stepWorld(input, deltaSeconds)
     }
 
@@ -142,8 +144,8 @@ export class LocalPlayerPredictor {
   // Exposes prediction state for the debug panel.
   metrics(): PredictionMetrics {
     return {
-      pendingInputCount: this.pendingInputs.length,
-      lastAckedInputSeq: this.lastAckedInputSeq,
+      pendingInputCount: Math.max(0, this.localPredictionTick - this.lastAckedInputTick),
+      lastAckedInputTick: this.lastAckedInputTick,
       predictionError: this.predictionError,
       correctionCount: this.correctionCount,
     }
@@ -159,7 +161,7 @@ export class LocalPlayerPredictor {
 
   // Clears local prediction state when the session ends.
   reset(): void {
-    this.pendingInputs = []
+    this.inputHistory.clear()
     this.world?.free()
     this.world = null
     this.playerBody = null
@@ -169,9 +171,18 @@ export class LocalPlayerPredictor {
     this.correctionElapsedSeconds = CORRECTION_DURATION_SECONDS
     this.lastAuthoritativePosition = null
     this.lastRenderedPosition = null
-    this.lastAckedInputSeq = 0
+    this.lastAckedInputTick = 0
+    this.localPredictionTick = 0
     this.predictionError = 0
     this.correctionCount = 0
+  }
+
+  private trimInputHistory(lastAckedInputTick: number): void {
+    for (const tick of this.inputHistory.keys()) {
+      if (tick <= lastAckedInputTick) {
+        this.inputHistory.delete(tick)
+      }
+    }
   }
 
   private createWorld(authoritative: PlayerSnapshot): void {

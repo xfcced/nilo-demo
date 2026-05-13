@@ -10,7 +10,7 @@ pub enum ClientMessage {
         ping_seq: u64,
     },
     Input {
-        seq: u64,
+        tick: u64,
         up: bool,
         down: bool,
         left: bool,

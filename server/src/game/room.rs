@@ -18,9 +18,10 @@ struct RoomState {
 
 #[derive(Debug)]
 struct Player {
-    input: PlayerInput,
-    last_received_input_seq: u64,
-    last_applied_input_seq: u64,
+    inputs_by_tick: HashMap<u64, PlayerInput>,
+    last_input: PlayerInput,
+    last_received_input_tick: u64,
+    last_processed_input_tick: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -35,7 +36,7 @@ pub struct RoomSnapshot {
     pub server_tick: u64,
     pub players: Vec<PlayerSnapshot>,
     pub boxes: Vec<BoxSnapshot>,
-    pub last_processed_input_seq: u64,
+    pub last_processed_input_tick: u64,
 }
 
 impl Room {
@@ -53,9 +54,10 @@ impl Room {
 
     pub fn add_player(&self, player_id: u64) {
         let player = Player {
-            input: PlayerInput::default(),
-            last_received_input_seq: 0,
-            last_applied_input_seq: 0,
+            inputs_by_tick: HashMap::new(),
+            last_input: PlayerInput::default(),
+            last_received_input_tick: 0,
+            last_processed_input_tick: 0,
         };
 
         let mut state = self.state.lock().expect("room state mutex poisoned");
@@ -81,9 +83,10 @@ impl Room {
             state.players.insert(
                 player_id,
                 Player {
-                    input: PlayerInput::default(),
-                    last_received_input_seq: 0,
-                    last_applied_input_seq: 0,
+                    inputs_by_tick: HashMap::new(),
+                    last_input: PlayerInput::default(),
+                    last_received_input_tick: 0,
+                    last_processed_input_tick: 0,
                 },
             );
             state.world.spawn_player(player_id);
@@ -97,39 +100,43 @@ impl Room {
             .restart_generation
     }
 
-    pub fn update_input(&self, player_id: u64, seq: u64, input: PlayerInput) {
+    pub fn update_input(&self, player_id: u64, tick: u64, input: PlayerInput) {
         let mut state = self.state.lock().expect("room state mutex poisoned");
+        if tick <= state.server_tick {
+            return;
+        }
+
         let Some(player) = state.players.get_mut(&player_id) else {
             return;
         };
 
-        if seq <= player.last_received_input_seq {
-            return;
-        }
-
-        player.last_received_input_seq = seq;
-        player.input = input;
+        player.last_received_input_tick = player.last_received_input_tick.max(tick);
+        player.inputs_by_tick.insert(tick, input);
     }
 
     pub fn tick(&self, delta_seconds: f32) {
         let mut state = self.state.lock().expect("room state mutex poisoned");
+        let simulation_tick = state.server_tick + 1;
         let inputs = state
             .players
-            .iter()
-            .map(|(&player_id, player)| (player_id, player.input, player.last_received_input_seq))
+            .iter_mut()
+            .map(|(&player_id, player)| {
+                if let Some(input) = player.inputs_by_tick.remove(&simulation_tick) {
+                    player.last_input = input;
+                }
+                player.last_processed_input_tick = simulation_tick;
+                (player_id, player.last_input)
+            })
             .collect::<Vec<_>>();
 
-        for (player_id, input, input_seq) in inputs {
+        for (player_id, input) in inputs {
             state
                 .world
                 .apply_player_input(player_id, input, delta_seconds);
-            if let Some(player) = state.players.get_mut(&player_id) {
-                player.last_applied_input_seq = input_seq;
-            }
         }
 
         state.world.step(delta_seconds);
-        state.server_tick += 1;
+        state.server_tick = simulation_tick;
     }
 
     pub fn snapshot_for_player(&self, player_id: u64) -> RoomSnapshot {
@@ -138,10 +145,10 @@ impl Room {
             server_tick: state.server_tick,
             players: state.world.player_snapshots(),
             boxes: state.world.box_snapshots(),
-            last_processed_input_seq: state
+            last_processed_input_tick: state
                 .players
                 .get(&player_id)
-                .map_or(0, |player| player.last_applied_input_seq),
+                .map_or(0, |player| player.last_processed_input_tick),
         }
     }
 
@@ -153,5 +160,78 @@ impl Room {
             .keys()
             .copied()
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::load_game_config;
+
+    fn test_config() -> Arc<GameConfig> {
+        Arc::new(load_game_config().unwrap())
+    }
+
+    fn player_snapshot(room: &Room) -> PlayerSnapshot {
+        room.snapshot_for_player(1)
+            .players
+            .into_iter()
+            .find(|player| player.player_id == 1)
+            .unwrap()
+    }
+
+    #[test]
+    fn tick_uses_input_for_matching_tick() {
+        let room = Room::new(test_config());
+        room.add_player(1);
+
+        room.update_input(
+            1,
+            2,
+            PlayerInput {
+                right: true,
+                ..PlayerInput::default()
+            },
+        );
+        room.update_input(
+            1,
+            1,
+            PlayerInput {
+                up: true,
+                ..PlayerInput::default()
+            },
+        );
+
+        room.tick(1.0 / 30.0);
+        let tick_one = player_snapshot(&room);
+        assert!(tick_one.vz < 0.0);
+        assert_eq!(room.snapshot_for_player(1).last_processed_input_tick, 1);
+
+        room.tick(1.0 / 30.0);
+        let tick_two = player_snapshot(&room);
+        assert!(tick_two.vx > 0.0);
+        assert_eq!(room.snapshot_for_player(1).last_processed_input_tick, 2);
+    }
+
+    #[test]
+    fn missing_tick_reuses_last_input() {
+        let room = Room::new(test_config());
+        room.add_player(1);
+        room.update_input(
+            1,
+            1,
+            PlayerInput {
+                up: true,
+                ..PlayerInput::default()
+            },
+        );
+
+        room.tick(1.0 / 30.0);
+        let tick_one = player_snapshot(&room);
+        room.tick(1.0 / 30.0);
+        let tick_two = player_snapshot(&room);
+
+        assert!(tick_two.z < tick_one.z);
+        assert_eq!(room.snapshot_for_player(1).last_processed_input_tick, 2);
     }
 }

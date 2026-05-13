@@ -23,7 +23,7 @@ export class GameClientApp {
   private localPlayerPredictor = new LocalPlayerPredictor()
   private gameLoop: GameLoop
 
-  private inputSeq = 0
+  private localPredictionTick: number | null = null
   private localPlayerId: number | null = null
   private connected = false
   private pingElapsedMs = PING_SEND_MS
@@ -148,7 +148,7 @@ export class GameClientApp {
       await this.serverConnection.send({ type: 'join' })
 
       this.connected = true
-      this.inputSeq = 0
+      this.localPredictionTick = null
       this.pingElapsedMs = PING_SEND_MS
       this.debugPanel.setConnection('connected')
       this.debugPanel.resetStateIntervalChart()
@@ -198,7 +198,9 @@ export class GameClientApp {
 
     this.pingElapsedMs += deltaMs
 
-    this.sendInput()
+    if (this.localPredictionTick !== null) {
+      this.sendInput()
+    }
 
     if (this.pingElapsedMs >= PING_SEND_MS) {
       this.pingElapsedMs -= PING_SEND_MS
@@ -280,15 +282,19 @@ export class GameClientApp {
   }
 
   private sendInput(): void {
-    this.inputSeq += 1
+    if (this.localPredictionTick === null) {
+      return
+    }
+
+    this.localPredictionTick += 1
     const movement = this.input.currentMovement()
-    this.localPlayerPredictor.pushLocalInput(this.inputSeq, movement, 1 / gameConfig.simulation.tickRate)
+    this.localPlayerPredictor.pushLocalInput(this.localPredictionTick, movement, 1 / gameConfig.simulation.tickRate)
     this.debugPanel.setPredictionMetrics(this.localPlayerPredictor.metrics())
 
     void this.serverConnection
       .send({
         type: 'input',
-        seq: this.inputSeq,
+        tick: this.localPredictionTick,
         ...movement,
       })
       .catch((error: unknown) => {
@@ -308,7 +314,13 @@ export class GameClientApp {
       return
     }
 
-    this.localPlayerPredictor.reconcile(authoritativePlayer, message.lastProcessedInputSeq, 1 / gameConfig.simulation.tickRate)
+    if (this.localPredictionTick === null) {
+      this.localPredictionTick = message.serverTick
+    } else {
+      this.localPredictionTick = Math.max(this.localPredictionTick, message.serverTick)
+    }
+
+    this.localPlayerPredictor.reconcile(authoritativePlayer, message.serverTick, message.lastProcessedInputTick, 1 / gameConfig.simulation.tickRate)
     this.debugPanel.setPredictionMetrics(this.localPlayerPredictor.metrics())
   }
 
@@ -319,7 +331,7 @@ export class GameClientApp {
   }
 
   private resetGameplayState(): void {
-    this.inputSeq = 0
+    this.localPredictionTick = null
     this.pingSeq = 0
     this.pendingPings.clear()
     this.pingElapsedMs = PING_SEND_MS
