@@ -126,7 +126,11 @@ fn handle_client_message(
                 return;
             }
 
-            room.restart();
+            let active_player_ids = joined_connections
+                .iter()
+                .map(|connection_id| connection_id.0)
+                .collect::<Vec<_>>();
+            room.restart(&active_player_ids);
             for joined_connection_id in joined_connections.iter().copied() {
                 send_message(network, joined_connection_id, ServerMessage::Restarted);
             }

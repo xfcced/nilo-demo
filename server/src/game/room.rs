@@ -69,15 +69,15 @@ impl Room {
         state.world.despawn_player(player_id);
     }
 
-    pub fn restart(&self) {
+    pub fn restart(&self, active_player_ids: &[u64]) {
         let mut state = self.state.lock().expect("room state mutex poisoned");
-        let player_ids = state.players.keys().copied().collect::<Vec<_>>();
 
         state.world = World::new(Arc::clone(&self.config));
+        state.players.clear();
         state.server_tick = 0;
         state.restart_generation += 1;
 
-        for player_id in player_ids {
+        for &player_id in active_player_ids {
             state.players.insert(
                 player_id,
                 Player {
