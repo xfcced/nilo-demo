@@ -48,8 +48,10 @@ type DebugPanelElements = {
   log: HTMLPreElement
   stateIntervalValue: HTMLElement
   stateIntervalChart: HTMLCanvasElement
-  lossValue: HTMLElement
-  lossChart: HTMLCanvasElement
+  stateLossValue: HTMLElement
+  stateLossChart: HTMLCanvasElement
+  inputLossValue: HTMLElement
+  inputLossChart: HTMLCanvasElement
 }
 
 export class DebugPanel {
@@ -82,8 +84,10 @@ export class DebugPanel {
       log: getElement('log'),
       stateIntervalValue: getElement('stateIntervalValue'),
       stateIntervalChart: getElement('stateIntervalChart'),
-      lossValue: getElement('lossValue'),
-      lossChart: getElement('lossChart'),
+      stateLossValue: getElement('stateLossValue'),
+      stateLossChart: getElement('stateLossChart'),
+      inputLossValue: getElement('inputLossValue'),
+      inputLossChart: getElement('inputLossChart'),
     }
 
     this.elements.toggleButton.addEventListener('click', () => {
@@ -91,7 +95,7 @@ export class DebugPanel {
     })
 
     this.drawStateIntervalChart()
-    this.drawLossChart()
+    this.drawLossCharts()
   }
 
   onRestart(handler: () => void): void {
@@ -159,8 +163,9 @@ export class DebugPanel {
       if (this.lossSamples.length > LOSS_SAMPLE_COUNT) {
         this.lossSamples.shift()
       }
-      this.elements.lossValue.textContent = `S:${stateLoss} I:${inputLoss}`
-      this.drawLossChart()
+      this.elements.stateLossValue.textContent = String(stateLoss)
+      this.elements.inputLossValue.textContent = String(inputLoss)
+      this.drawLossCharts()
     }
 
     this.previousLossServerTick = serverTick
@@ -171,8 +176,9 @@ export class DebugPanel {
     this.previousLossServerTick = null
     this.previousLossInputSeq = null
     this.lossSamples = []
-    this.elements.lossValue.textContent = '-'
-    this.drawLossChart()
+    this.elements.stateLossValue.textContent = '-'
+    this.elements.inputLossValue.textContent = '-'
+    this.drawLossCharts()
   }
 
   setNetworkStats(stats: NetworkStats | null): void {
@@ -302,8 +308,12 @@ export class DebugPanel {
     context.stroke()
   }
 
-  private drawLossChart(): void {
-    const canvas = this.elements.lossChart
+  private drawLossCharts(): void {
+    this.drawSingleLossChart(this.elements.stateLossChart, 'stateLoss', '#2f6fda')
+    this.drawSingleLossChart(this.elements.inputLossChart, 'inputLoss', '#d64545')
+  }
+
+  private drawSingleLossChart(canvas: HTMLCanvasElement, key: keyof LossSample, color: string): void {
     const context = canvas.getContext('2d')
     if (!context) {
       return
@@ -320,10 +330,7 @@ export class DebugPanel {
     const chartBottom = height - bottomPadding
     const chartWidth = chartRight - chartLeft
     const chartHeight = chartBottom - chartTop
-    const maxLoss = Math.max(
-      LOSS_CHART_MIN_MAX,
-      ...this.lossSamples.flatMap((sample) => [sample.stateLoss, sample.inputLoss]),
-    )
+    const maxLoss = Math.max(LOSS_CHART_MIN_MAX, ...this.lossSamples.map((sample) => sample[key]))
     const midLoss = Math.ceil(maxLoss / 2)
 
     context.font = `${10 * pixelRatio}px ui-sans-serif, system-ui, sans-serif`
@@ -357,8 +364,7 @@ export class DebugPanel {
     context.textAlign = 'left'
     context.fillText('lost/sample', chartLeft, 2 * pixelRatio)
 
-    drawLossLine(context, this.lossSamples, 'stateLoss', '#2f6fda', chartLeft, chartWidth, chartHeight, chartTop, maxLoss, pixelRatio)
-    drawLossLine(context, this.lossSamples, 'inputLoss', '#d64545', chartLeft, chartWidth, chartHeight, chartTop, maxLoss, pixelRatio)
+    drawLossLine(context, this.lossSamples, key, color, chartLeft, chartWidth, chartHeight, chartTop, maxLoss, pixelRatio)
   }
 }
 

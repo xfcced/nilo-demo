@@ -189,22 +189,13 @@ button:disabled {
   line-height: 1.1;
 }
 
-.loss-chart-legend {
-  display: flex;
-  gap: 10px;
-  color: #000000;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.loss-chart-legend span {
+.loss-chart-header span {
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
-.loss-chart-legend i {
+.loss-chart-header i {
   width: 12px;
   height: 2px;
   display: inline-block;
@@ -219,7 +210,8 @@ button:disabled {
 }
 
 #stateIntervalChart,
-#lossChart {
+#stateLossChart,
+#inputLossChart {
   width: 100%;
   display: block;
   border: 1px solid #777777;
@@ -230,8 +222,9 @@ button:disabled {
   height: 72px;
 }
 
-#lossChart {
-  height: 88px;
+#stateLossChart,
+#inputLossChart {
+  height: 72px;
 }
 
 @media (max-width: 620px) {

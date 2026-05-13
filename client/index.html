@@ -38,12 +38,12 @@
           <div><span>RTT</span><strong id="rttValue">-</strong></div>
           <div><span>FPS</span><strong id="fpsValue">-</strong></div>
           <div><span>Tick</span><strong id="serverTickValue">-</strong></div>
+          <div><span>Input Seq</span><strong id="ackSeqValue">-</strong></div>
           <div><span>Rx</span><strong id="rxMessageValue">-</strong></div>
           <div><span>Tx</span><strong id="txMessageValue">-</strong></div>
           <div><span>Down</span><strong id="downloadValue">-</strong></div>
           <div><span>Up</span><strong id="uploadValue">-</strong></div>
           <div><span>Pending</span><strong id="pendingInputValue">-</strong></div>
-          <div><span>Input Seq</span><strong id="ackSeqValue">-</strong></div>
           <div><span>Pred Err</span><strong id="predictionErrorValue">-</strong></div>
           <div><span>Correct</span><strong id="correctionValue">-</strong></div>
         </div>
@@ -58,16 +58,20 @@
           <canvas id="stateIntervalChart" width="320" height="72"></canvas>
         </div>
 
-        <div class="loss-chart">
+        <div class="loss-chart state-loss-chart">
           <div class="loss-chart-header">
-            <span>Loss</span>
-            <strong id="lossValue">-</strong>
+            <span><i class="loss-state-key"></i>State Loss</span>
+            <strong id="stateLossValue">-</strong>
           </div>
-          <div class="loss-chart-legend">
-            <span><i class="loss-state-key"></i>State</span>
-            <span><i class="loss-input-key"></i>Input</span>
+          <canvas id="stateLossChart" width="320" height="72"></canvas>
+        </div>
+
+        <div class="loss-chart input-loss-chart">
+          <div class="loss-chart-header">
+            <span><i class="loss-input-key"></i>Input Loss</span>
+            <strong id="inputLossValue">-</strong>
           </div>
-          <canvas id="lossChart" width="320" height="88"></canvas>
+          <canvas id="inputLossChart" width="320" height="72"></canvas>
         </div>
       </section>
     </main>
