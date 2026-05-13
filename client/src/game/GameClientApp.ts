@@ -3,7 +3,7 @@ import { KeyboardInput } from '../engine/KeyboardInput'
 import type { TransportCounters } from '../engine/WebTransportClient'
 import { type AppElements, getAppElements } from './appElements'
 import { ArenaScene } from './ArenaScene'
-import { defaultWebTransportUrl, gameConfig } from './config'
+import { defaultWebTransportUrl, FIXED_STEP_MS, gameConfig } from './config'
 import { GameConnection } from './net/GameConnection'
 import type { ServerMessage } from './net/protocol'
 import { LocalPlayerPredictor } from './sync/LocalPlayerPredictor'
@@ -39,10 +39,10 @@ export class GameClientApp {
     this.applyBuildDefaults()
     this.arena = new ArenaScene(elements.canvas)
     this.gameLoop = new GameLoop({
-      fixedStepMs: 1000 / gameConfig.simulation.tickRate,
+      fixedStepMs: FIXED_STEP_MS,
       maxFrameMs: gameConfig.simulation.maxFrameMs,
-      update: (deltaMs) => this.fixedUpdate(deltaMs),
-      drawFrame: (frameMs, alpha) => this.render(frameMs, alpha),
+      fixedUpdate: () => this.fixedUpdate(),
+      drawFrame: (renderDeltaMs, fixedStepAlpha) => this.render(renderDeltaMs, fixedStepAlpha),
     })
   }
 
@@ -188,15 +188,12 @@ export class GameClientApp {
     }
   }
 
-  // physics update
-  private fixedUpdate(deltaMs: number): void {
-    this.arena.update(deltaMs / 1000)
-
+  private fixedUpdate(): void {
     if (!this.connected || this.localPlayerId === null) {
       return
     }
 
-    this.pingElapsedMs += deltaMs
+    this.pingElapsedMs += FIXED_STEP_MS
 
     if (this.localPredictionTick !== null) {
       this.sendInput()
@@ -208,17 +205,18 @@ export class GameClientApp {
     }
   }
 
-  private render(frameMs: number, alpha: number): void {
-    this.updateFps(frameMs)
-    this.updateNetworkStats(frameMs)
-    const localPlayer = this.localPlayerId === null ? null : this.localPlayerPredictor.renderPlayer(this.localPlayerId, alpha, frameMs / 1000)
+  private render(renderDeltaMs: number, fixedStepAlpha: number): void {
+    this.updateFps(renderDeltaMs)
+    this.updateNetworkStats(renderDeltaMs)
+    const renderDeltaSeconds = renderDeltaMs / 1000
+    const localPlayer = this.localPlayerId === null ? null : this.localPlayerPredictor.renderPlayer(this.localPlayerId, fixedStepAlpha, renderDeltaSeconds)
     this.arena.setLocalPredictionDebug(localPlayer ? this.localPlayerPredictor.debugState() : null)
     this.arena.applyRenderState(this.interpolator.sample(performance.now(), this.localPlayerId, localPlayer))
     this.arena.render()
   }
 
-  private updateFps(frameMs: number): void {
-    this.fpsElapsedMs += frameMs
+  private updateFps(renderDeltaMs: number): void {
+    this.fpsElapsedMs += renderDeltaMs
     this.fpsFrameCount += 1
 
     if (this.fpsElapsedMs < FPS_SAMPLE_MS) {
@@ -230,12 +228,12 @@ export class GameClientApp {
     this.fpsFrameCount = 0
   }
 
-  private updateNetworkStats(frameMs: number): void {
+  private updateNetworkStats(renderDeltaMs: number): void {
     if (!this.connected || !this.previousNetworkCounters) {
       return
     }
 
-    this.networkStatsElapsedMs += frameMs
+    this.networkStatsElapsedMs += renderDeltaMs
     if (this.networkStatsElapsedMs < NETWORK_STATS_SAMPLE_MS) {
       return
     }
@@ -288,7 +286,7 @@ export class GameClientApp {
 
     this.localPredictionTick += 1
     const movement = this.input.currentMovement()
-    this.localPlayerPredictor.pushLocalInput(this.localPredictionTick, movement, 1 / gameConfig.simulation.tickRate)
+    this.localPlayerPredictor.pushLocalInput(this.localPredictionTick, movement)
     this.debugPanel.setPredictionMetrics(this.localPlayerPredictor.metrics())
 
     void this.serverConnection
@@ -320,7 +318,7 @@ export class GameClientApp {
       this.localPredictionTick = Math.max(this.localPredictionTick, message.serverTick)
     }
 
-    this.localPlayerPredictor.reconcile(authoritativePlayer, message.serverTick, message.lastProcessedInputTick, 1 / gameConfig.simulation.tickRate)
+    this.localPlayerPredictor.reconcile(authoritativePlayer, message.serverTick, message.lastProcessedInputTick)
     this.debugPanel.setPredictionMetrics(this.localPlayerPredictor.metrics())
   }
 

@@ -148,13 +148,13 @@ function samplePlayer(samples: PlayerSample[], renderTick: number): RenderPlayer
     return null
   }
 
-  const { before, after, alpha } = pair
+  const { before, after, sampleAlpha } = pair
   return {
     playerId: before.playerId,
     isLocal: false,
-    x: lerp(before.x, after.x, alpha),
-    y: lerp(before.y, after.y, alpha),
-    z: lerp(before.z, after.z, alpha),
+    x: lerp(before.x, after.x, sampleAlpha),
+    y: lerp(before.y, after.y, sampleAlpha),
+    z: lerp(before.z, after.z, sampleAlpha),
   }
 }
 
@@ -164,16 +164,16 @@ function sampleBox(samples: BoxSample[], renderTick: number): RenderBox | null {
     return null
   }
 
-  const { before, after, alpha } = pair
+  const { before, after, sampleAlpha } = pair
   const from = new THREE.Quaternion(before.qx, before.qy, before.qz, before.qw)
   const to = new THREE.Quaternion(after.qx, after.qy, after.qz, after.qw)
-  const rotation = from.slerp(to, alpha)
+  const rotation = from.slerp(to, sampleAlpha)
 
   return {
     boxId: before.boxId,
-    x: lerp(before.x, after.x, alpha),
-    y: lerp(before.y, after.y, alpha),
-    z: lerp(before.z, after.z, alpha),
+    x: lerp(before.x, after.x, sampleAlpha),
+    y: lerp(before.y, after.y, sampleAlpha),
+    z: lerp(before.z, after.z, sampleAlpha),
     qx: rotation.x,
     qy: rotation.y,
     qz: rotation.z,
@@ -181,13 +181,13 @@ function sampleBox(samples: BoxSample[], renderTick: number): RenderBox | null {
   }
 }
 
-function findSamplePair<T extends { serverTick: number }>(samples: T[], renderTick: number): { before: T; after: T; alpha: number } | null {
+function findSamplePair<T extends { serverTick: number }>(samples: T[], renderTick: number): { before: T; after: T; sampleAlpha: number } | null {
   if (samples.length === 0) {
     return null
   }
 
   if (renderTick <= samples[0].serverTick) {
-    return { before: samples[0], after: samples[0], alpha: 0 }
+    return { before: samples[0], after: samples[0], sampleAlpha: 0 }
   }
 
   for (let index = 0; index < samples.length - 1; index += 1) {
@@ -198,15 +198,15 @@ function findSamplePair<T extends { serverTick: number }>(samples: T[], renderTi
       return {
         before,
         after,
-        alpha: span <= 0 ? 0 : (renderTick - before.serverTick) / span,
+        sampleAlpha: span <= 0 ? 0 : (renderTick - before.serverTick) / span,
       }
     }
   }
 
   const latest = samples.at(-1)!
-  return { before: latest, after: latest, alpha: 0 }
+  return { before: latest, after: latest, sampleAlpha: 0 }
 }
 
-function lerp(from: number, to: number, alpha: number): number {
-  return from + (to - from) * alpha
+function lerp(from: number, to: number, sampleAlpha: number): number {
+  return from + (to - from) * sampleAlpha
 }

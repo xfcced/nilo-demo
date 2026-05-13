@@ -33,10 +33,6 @@ export class ArenaScene {
     window.addEventListener('resize', () => this.resize())
   }
 
-  update(_deltaSeconds: number): void {
-    // Scene animation hooks belong here; network interpolation is handled outside this renderer.
-  }
-
   render(): void {
     this.renderer.render(this.scene, this.camera)
   }

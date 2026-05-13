@@ -1,5 +1,5 @@
 import RAPIER, { init as initRapier, type RigidBody, type World } from '@dimforge/rapier3d-compat'
-import { gameConfig } from '../config'
+import { FIXED_STEP_SECONDS, gameConfig } from '../config'
 import type { PlayerSnapshot } from '../net/protocol'
 import type { RenderPlayer } from '../renderState'
 
@@ -59,7 +59,7 @@ export class LocalPlayerPredictor {
   }
 
   // Stores local input and immediately predicts one local physics step.
-  pushLocalInput(tick: number, input: MovementInput, deltaSeconds: number): void {
+  pushLocalInput(tick: number, input: MovementInput): void {
     this.localPredictionTick = Math.max(this.localPredictionTick, tick)
     this.inputHistory.set(tick, { ...input })
 
@@ -67,11 +67,11 @@ export class LocalPlayerPredictor {
       return
     }
 
-    this.stepWorld(input, deltaSeconds)
+    this.stepWorld(input)
   }
 
   // Replays unacknowledged inputs from the latest server-authoritative state.
-  reconcile(authoritative: PlayerSnapshot, authoritativeTick: number, lastProcessedInputTick: number, deltaSeconds: number): void {
+  reconcile(authoritative: PlayerSnapshot, authoritativeTick: number, lastProcessedInputTick: number): void {
     this.lastAuthoritativePosition = {
       x: authoritative.x,
       y: authoritative.y,
@@ -97,7 +97,7 @@ export class LocalPlayerPredictor {
       if (!input) {
         continue
       }
-      this.stepWorld(input, deltaSeconds)
+      this.stepWorld(input)
     }
 
     const corrected = this.physicsPosition()
@@ -123,10 +123,10 @@ export class LocalPlayerPredictor {
   }
 
   // Returns the predicted local player state for rendering.
-  renderPlayer(playerId: number, alpha: number, frameSeconds: number): RenderPlayer | null {
-    this.decayCorrection(frameSeconds)
+  renderPlayer(playerId: number, fixedStepAlpha: number, renderDeltaSeconds: number): RenderPlayer | null {
+    this.decayCorrection(renderDeltaSeconds)
 
-    const rendered = this.renderPosition(alpha)
+    const rendered = this.renderPosition(fixedStepAlpha)
     if (!rendered) {
       return null
     }
@@ -188,7 +188,7 @@ export class LocalPlayerPredictor {
   private createWorld(authoritative: PlayerSnapshot): void {
     this.world?.free()
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
-    this.world.integrationParameters.dt = 1 / gameConfig.simulation.tickRate
+    this.world.integrationParameters.dt = FIXED_STEP_SECONDS
     this.buildStaticArena()
 
     const body = RAPIER.RigidBodyDesc.dynamic()
@@ -232,17 +232,17 @@ export class LocalPlayerPredictor {
     this.playerBody.setAngvel({ x: 0, y: 0, z: 0 }, true)
   }
 
-  private stepWorld(input: MovementInput, deltaSeconds: number): void {
+  private stepWorld(input: MovementInput): void {
     if (!this.world || !this.playerBody) {
       return
     }
 
-    this.world.integrationParameters.dt = deltaSeconds
-    this.applyPlayerInput(input, deltaSeconds)
+    this.world.integrationParameters.dt = FIXED_STEP_SECONDS
+    this.applyPlayerInput(input)
     this.world.step()
   }
 
-  private applyPlayerInput(input: MovementInput, deltaSeconds: number): void {
+  private applyPlayerInput(input: MovementInput): void {
     if (!this.playerBody) {
       return
     }
@@ -270,7 +270,7 @@ export class LocalPlayerPredictor {
     }
 
     const { maxSpeed, acceleration, deceleration } = gameConfig.player
-    const maxDelta = (length > 0 ? acceleration : deceleration) * deltaSeconds
+    const maxDelta = (length > 0 ? acceleration : deceleration) * FIXED_STEP_SECONDS
     const velocity = this.playerBody.linvel()
     this.playerBody.setLinvel(
       {
@@ -282,13 +282,13 @@ export class LocalPlayerPredictor {
     )
   }
 
-  private decayCorrection(deltaSeconds: number): void {
+  private decayCorrection(renderDeltaSeconds: number): void {
     if (this.correctionElapsedSeconds >= CORRECTION_DURATION_SECONDS) {
       return
     }
 
     const previousProgress = this.correctionElapsedSeconds / CORRECTION_DURATION_SECONDS
-    this.correctionElapsedSeconds = Math.min(CORRECTION_DURATION_SECONDS, this.correctionElapsedSeconds + deltaSeconds)
+    this.correctionElapsedSeconds = Math.min(CORRECTION_DURATION_SECONDS, this.correctionElapsedSeconds + renderDeltaSeconds)
     const currentProgress = this.correctionElapsedSeconds / CORRECTION_DURATION_SECONDS
     const previousRemaining = 1 - previousProgress
     const currentRemaining = 1 - currentProgress
@@ -306,8 +306,8 @@ export class LocalPlayerPredictor {
     this.correctionOffsetZ *= scale
   }
 
-  private renderPosition(alpha = 0): PredictedPosition | null {
-    const state = this.extrapolatedPhysicsPosition(alpha)
+  private renderPosition(fixedStepAlpha = 0): PredictedPosition | null {
+    const state = this.extrapolatedPhysicsPosition(fixedStepAlpha)
     if (!state) {
       return null
     }
@@ -319,15 +319,15 @@ export class LocalPlayerPredictor {
     }
   }
 
-  private extrapolatedPhysicsPosition(alpha: number): PredictedPosition | null {
+  private extrapolatedPhysicsPosition(fixedStepAlpha: number): PredictedPosition | null {
     const position = this.physicsPosition()
     const velocity = this.playerBody?.linvel()
     if (!position || !velocity) {
       return position
     }
 
-    const t = Math.max(0, Math.min(1, alpha))
-    const frameLeadSeconds = t / gameConfig.simulation.tickRate
+    const clampedFixedStepAlpha = Math.max(0, Math.min(1, fixedStepAlpha))
+    const frameLeadSeconds = clampedFixedStepAlpha * FIXED_STEP_SECONDS
     return {
       x: position.x + velocity.x * frameLeadSeconds,
       y: position.y + velocity.y * frameLeadSeconds,

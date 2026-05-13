@@ -188,7 +188,8 @@ async fn run_room_tick(
     mut delta_tracker: StateDeltaTracker,
     config: Arc<GameConfig>,
 ) {
-    let tick_duration = Duration::from_secs_f32(1.0 / config.simulation.tick_rate);
+    let fixed_delta_seconds = 1.0 / config.simulation.tick_rate;
+    let tick_duration = Duration::from_secs_f32(fixed_delta_seconds);
     let max_frame_time = Duration::from_millis(config.simulation.max_frame_ms);
     let mut previous_time = Instant::now();
     let mut accumulator = Duration::ZERO;
@@ -203,7 +204,7 @@ async fn run_room_tick(
         while accumulator >= tick_duration
             && ticks_this_frame < config.simulation.max_ticks_per_frame
         {
-            room.tick(1.0 / config.simulation.tick_rate);
+            room.tick(fixed_delta_seconds);
             broadcast_room_state(&room, &network, &mut delta_tracker);
 
             accumulator -= tick_duration;
