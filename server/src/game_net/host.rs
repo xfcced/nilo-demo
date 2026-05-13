@@ -118,7 +118,7 @@ impl GameNetworkHost {
     pub fn send_state(&self, connection_id: ConnectionId, snapshot: &RoomSnapshot) -> Result<()> {
         let payload = encode_state(BinaryState {
             server_tick: snapshot.server_tick,
-            last_processed_input_tick: snapshot.last_processed_input_tick,
+            last_received_input_seq: snapshot.last_received_input_seq,
             players: &snapshot.players,
             boxes: &snapshot.boxes,
             position_scale: self.protocol.position_scale,
@@ -252,7 +252,7 @@ fn handle_datagram_payload(
             let _ = event_sender.send(GameNetEvent::Message {
                 connection_id,
                 message: ClientMessage::Input {
-                    tick: input.tick as u64,
+                    input_seq: input.input_seq as u64,
                     up: input.input.up,
                     down: input.input.down,
                     left: input.input.left,

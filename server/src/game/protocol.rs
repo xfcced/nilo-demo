@@ -10,7 +10,8 @@ pub enum ClientMessage {
         ping_seq: u64,
     },
     Input {
-        tick: u64,
+        #[serde(rename = "inputSeq")]
+        input_seq: u64,
         up: bool,
         down: bool,
         left: bool,

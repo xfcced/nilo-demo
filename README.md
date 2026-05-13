@@ -169,14 +169,14 @@ type ServerMessage = { type: 'welcome'; playerId: number } | { type: 'pong'; pin
 High-rate `input` and `state` messages use WebTransport datagrams with a compact big-endian binary format. The first byte is the message type:
 
 ```text
-input: u8 type=1, u32 inputTick, u8 buttons
-state: u8 type=2, u32 serverTick, u32 lastProcessedInputTick, u8 playerCount, u8 changedBoxCount, players, changedBoxes
+input: u8 type=1, u32 inputSeq, u8 buttons
+state: u8 type=2, u32 serverTick, u32 lastReceivedInputSeq, u8 playerCount, u8 changedBoxCount, players, changedBoxes
 player: u8 playerId, i16 xCm, i16 yCm, i16 zCm, i16 vxCmPerSec, i16 vyCmPerSec, i16 vzCmPerSec
 box: u8 boxId, i16 xCm, i16 yCm, i16 zCm, u8 largestQuatIndex, i16 qA, i16 qB, i16 qC
 ```
 
 Box rotations use smallest-three quaternion compression: the largest absolute component is omitted, the quaternion is sign-flipped if needed so the omitted component is positive, and the other three components are quantized into `i16`.
 
-State datagrams always include all current players. `lastProcessedInputTick` is connection-local: it acknowledges the latest simulation tick the server has applied for that client, and the client uses `serverTick` plus its local input history to replay from the authoritative tick to the current local prediction tick. New connections receive one full box baseline, then boxes are changed-only: if a box's quantized position and rotation match the last server snapshot, it is omitted and the client keeps its previous box state.
+State datagrams always include all current players. `serverTick` is the authoritative simulation timeline used for reconciliation: the client resets to the authoritative state for that tick, drops local prediction history at or before that tick, then replays newer local prediction inputs. `lastReceivedInputSeq` is connection-local debug/ack data for the newest input packet the server accepted; it is not used as the replay boundary. New connections receive one full box baseline, then boxes are changed-only: if a box's quantized position and rotation match the last server snapshot, it is omitted and the client keeps its previous box state.
 
 `serverTick` is the interpolation timeline. Ping RTT is measured entirely on the client by matching `ping.pingSeq` to `pong.pingSeq`.

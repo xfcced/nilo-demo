@@ -4,13 +4,13 @@ export type ClientMessage =
   | { type: 'join' }
   | { type: 'restart' }
   | { type: 'ping'; pingSeq: number }
-  | { type: 'input'; tick: number; up: boolean; down: boolean; left: boolean; right: boolean }
+  | { type: 'input'; inputSeq: number; up: boolean; down: boolean; left: boolean; right: boolean }
 
 export type ServerMessage =
   | { type: 'welcome'; playerId: number }
   | { type: 'restarted' }
   | { type: 'pong'; pingSeq: number }
-  | { type: 'state'; serverTick: number; lastProcessedInputTick: number; players: PlayerSnapshot[]; boxes: BoxSnapshot[] }
+  | { type: 'state'; serverTick: number; lastReceivedInputSeq: number; players: PlayerSnapshot[]; boxes: BoxSnapshot[] }
   | { type: 'error'; message: string }
 
 export type PlayerSnapshot = {
@@ -50,7 +50,7 @@ export function encodeInputDatagram(message: Extract<ClientMessage, { type: 'inp
   const payload = new Uint8Array(INPUT_BYTES)
   const view = new DataView(payload.buffer)
   view.setUint8(0, BINARY_TYPE_INPUT)
-  view.setUint32(1, message.tick, false)
+  view.setUint32(1, message.inputSeq, false)
   view.setUint8(5, encodeButtons(message))
   return payload
 }
@@ -67,7 +67,7 @@ export function decodeStateDatagram(payload: Uint8Array): ServerMessage {
   }
 
   const serverTick = view.getUint32(1, false)
-  const lastProcessedInputTick = view.getUint32(5, false)
+  const lastReceivedInputSeq = view.getUint32(5, false)
   const playerCount = view.getUint8(9)
   const boxCount = view.getUint8(10)
   const expectedBytes = STATE_HEADER_BYTES + playerCount * PLAYER_BYTES + boxCount * BOX_BYTES
@@ -101,7 +101,7 @@ export function decodeStateDatagram(payload: Uint8Array): ServerMessage {
     offset += BOX_BYTES
   }
 
-  return { type: 'state', serverTick, lastProcessedInputTick, players, boxes }
+  return { type: 'state', serverTick, lastReceivedInputSeq, players, boxes }
 }
 
 export function decodeServerMessage(line: string): ServerMessage {
@@ -134,7 +134,7 @@ function isServerMessage(value: unknown): value is ServerMessage {
   if (message.type === 'state') {
     return (
       typeof message.serverTick === 'number' &&
-      typeof message.lastProcessedInputTick === 'number' &&
+      typeof message.lastReceivedInputSeq === 'number' &&
       Array.isArray(message.players) &&
       message.players.every(isPlayerSnapshot) &&
       Array.isArray(message.boxes) &&

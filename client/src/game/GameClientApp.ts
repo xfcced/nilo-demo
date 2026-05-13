@@ -24,6 +24,7 @@ export class GameClientApp {
   private gameLoop: GameLoop
 
   private localPredictionTick: number | null = null
+  private inputSeq = 0
   private localPlayerId: number | null = null
   private connected = false
   private pingElapsedMs = PING_SEND_MS
@@ -149,6 +150,7 @@ export class GameClientApp {
 
       this.connected = true
       this.localPredictionTick = null
+      this.inputSeq = 0
       this.pingElapsedMs = PING_SEND_MS
       this.debugPanel.setConnection('connected')
       this.debugPanel.resetStateIntervalChart()
@@ -292,7 +294,7 @@ export class GameClientApp {
     void this.serverConnection
       .send({
         type: 'input',
-        tick: this.localPredictionTick,
+        inputSeq: ++this.inputSeq,
         ...movement,
       })
       .catch((error: unknown) => {
@@ -318,13 +320,14 @@ export class GameClientApp {
       this.localPredictionTick = Math.max(this.localPredictionTick, message.serverTick)
     }
 
-    this.localPlayerPredictor.reconcile(authoritativePlayer, message.serverTick, message.lastProcessedInputTick)
+    this.localPlayerPredictor.reconcile(authoritativePlayer, message.serverTick, message.lastReceivedInputSeq)
     this.debugPanel.setPredictionMetrics(this.localPlayerPredictor.metrics())
   }
 
   private resetSessionState(): void {
     this.connected = false
     this.localPlayerId = null
+    this.inputSeq = 0
     this.resetGameplayState()
   }
 

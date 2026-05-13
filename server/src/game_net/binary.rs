@@ -16,14 +16,14 @@ static QUATERNION_CLAMP_LOGGED: AtomicBool = AtomicBool::new(false);
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BinaryInput {
-    pub tick: u32,
+    pub input_seq: u32,
     pub input: PlayerInput,
 }
 
 #[derive(Clone, Debug)]
 pub struct BinaryState<'a> {
     pub server_tick: u64,
-    pub last_processed_input_tick: u64,
+    pub last_received_input_seq: u64,
     pub players: &'a [PlayerSnapshot],
     pub boxes: &'a [BoxSnapshot],
     pub position_scale: f32,
@@ -43,7 +43,7 @@ pub fn decode_input(payload: &[u8]) -> Result<BinaryInput> {
     );
 
     Ok(BinaryInput {
-        tick: u32::from_be_bytes(payload[1..5].try_into()?),
+        input_seq: u32::from_be_bytes(payload[1..5].try_into()?),
         input: decode_buttons(payload[5]),
     })
 }
@@ -55,9 +55,9 @@ pub fn encode_state(state: BinaryState<'_>) -> Result<Vec<u8>> {
         state.server_tick
     );
     ensure!(
-        state.last_processed_input_tick <= u32::MAX as u64,
-        "last processed input tick exceeds binary protocol range: {}",
-        state.last_processed_input_tick
+        state.last_received_input_seq <= u32::MAX as u64,
+        "last received input seq exceeds binary protocol range: {}",
+        state.last_received_input_seq
     );
     ensure!(
         state.players.len() <= u8::MAX as usize,
@@ -75,7 +75,7 @@ pub fn encode_state(state: BinaryState<'_>) -> Result<Vec<u8>> {
     );
     payload.push(TYPE_STATE);
     payload.extend_from_slice(&(state.server_tick as u32).to_be_bytes());
-    payload.extend_from_slice(&(state.last_processed_input_tick as u32).to_be_bytes());
+    payload.extend_from_slice(&(state.last_received_input_seq as u32).to_be_bytes());
     payload.push(state.players.len() as u8);
     payload.push(state.boxes.len() as u8);
 
@@ -180,7 +180,7 @@ mod tests {
         assert_eq!(
             decode_input(&encoded).unwrap(),
             BinaryInput {
-                tick: 42,
+                input_seq: 42,
                 input: PlayerInput {
                     up: true,
                     down: false,
@@ -222,7 +222,7 @@ mod tests {
 
         let encoded = encode_state(BinaryState {
             server_tick: 100,
-            last_processed_input_tick: 42,
+            last_received_input_seq: 42,
             players: &players,
             boxes: &boxes,
             position_scale: 100.0,

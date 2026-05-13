@@ -12,7 +12,7 @@ export type MovementInput = {
 
 export type PredictionMetrics = {
   pendingInputCount: number
-  lastAckedInputTick: number
+  lastReceivedInputSeq: number
   predictionError: number
   correctionCount: number
 }
@@ -45,7 +45,8 @@ export class LocalPlayerPredictor {
   private correctionElapsedSeconds = CORRECTION_DURATION_SECONDS
   private lastAuthoritativePosition: PredictedPosition | null = null
   private lastRenderedPosition: PredictedPosition | null = null
-  private lastAckedInputTick = 0
+  private lastAuthoritativeTick = 0
+  private lastReceivedInputSeq = 0
   private localPredictionTick = 0
   private predictionError = 0
   private correctionCount = 0
@@ -70,15 +71,16 @@ export class LocalPlayerPredictor {
     this.stepWorld(input)
   }
 
-  // Replays unacknowledged inputs from the latest server-authoritative state.
-  reconcile(authoritative: PlayerSnapshot, authoritativeTick: number, lastProcessedInputTick: number): void {
+  // Replays only the inputs newer than the latest server-authoritative tick.
+  reconcile(authoritative: PlayerSnapshot, authoritativeTick: number, lastReceivedInputSeq: number): void {
     this.lastAuthoritativePosition = {
       x: authoritative.x,
       y: authoritative.y,
       z: authoritative.z,
     }
-    this.lastAckedInputTick = Math.max(this.lastAckedInputTick, lastProcessedInputTick)
-    this.trimInputHistory(this.lastAckedInputTick)
+    this.lastAuthoritativeTick = Math.max(this.lastAuthoritativeTick, authoritativeTick)
+    this.lastReceivedInputSeq = Math.max(this.lastReceivedInputSeq, lastReceivedInputSeq)
+    this.trimInputHistory(authoritativeTick)
 
     if (!this.ready) {
       return
@@ -144,8 +146,8 @@ export class LocalPlayerPredictor {
   // Exposes prediction state for the debug panel.
   metrics(): PredictionMetrics {
     return {
-      pendingInputCount: Math.max(0, this.localPredictionTick - this.lastAckedInputTick),
-      lastAckedInputTick: this.lastAckedInputTick,
+      pendingInputCount: Math.max(0, this.localPredictionTick - this.lastAuthoritativeTick),
+      lastReceivedInputSeq: this.lastReceivedInputSeq,
       predictionError: this.predictionError,
       correctionCount: this.correctionCount,
     }
@@ -171,15 +173,16 @@ export class LocalPlayerPredictor {
     this.correctionElapsedSeconds = CORRECTION_DURATION_SECONDS
     this.lastAuthoritativePosition = null
     this.lastRenderedPosition = null
-    this.lastAckedInputTick = 0
+    this.lastAuthoritativeTick = 0
+    this.lastReceivedInputSeq = 0
     this.localPredictionTick = 0
     this.predictionError = 0
     this.correctionCount = 0
   }
 
-  private trimInputHistory(lastAckedInputTick: number): void {
+  private trimInputHistory(authoritativeTick: number): void {
     for (const tick of this.inputHistory.keys()) {
-      if (tick <= lastAckedInputTick) {
+      if (tick <= authoritativeTick) {
         this.inputHistory.delete(tick)
       }
     }
