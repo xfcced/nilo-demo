@@ -6,12 +6,14 @@ use std::sync::{Arc, Mutex};
 
 pub struct Room {
     state: Mutex<RoomState>,
+    config: Arc<GameConfig>,
 }
 
 struct RoomState {
     players: HashMap<u64, Player>,
     world: World,
     server_tick: u64,
+    restart_generation: u64,
 }
 
 #[derive(Debug)]
@@ -41,9 +43,11 @@ impl Room {
         Self {
             state: Mutex::new(RoomState {
                 players: HashMap::new(),
-                world: World::new(config),
+                world: World::new(Arc::clone(&config)),
                 server_tick: 0,
+                restart_generation: 0,
             }),
+            config,
         }
     }
 
@@ -63,6 +67,34 @@ impl Room {
         let mut state = self.state.lock().expect("room state mutex poisoned");
         state.players.remove(&player_id);
         state.world.despawn_player(player_id);
+    }
+
+    pub fn restart(&self) {
+        let mut state = self.state.lock().expect("room state mutex poisoned");
+        let player_ids = state.players.keys().copied().collect::<Vec<_>>();
+
+        state.world = World::new(Arc::clone(&self.config));
+        state.server_tick = 0;
+        state.restart_generation += 1;
+
+        for player_id in player_ids {
+            state.players.insert(
+                player_id,
+                Player {
+                    input: PlayerInput::default(),
+                    last_received_input_seq: 0,
+                    last_applied_input_seq: 0,
+                },
+            );
+            state.world.spawn_player(player_id);
+        }
+    }
+
+    pub fn restart_generation(&self) -> u64 {
+        self.state
+            .lock()
+            .expect("room state mutex poisoned")
+            .restart_generation
     }
 
     pub fn update_input(&self, player_id: u64, seq: u64, input: PlayerInput) {

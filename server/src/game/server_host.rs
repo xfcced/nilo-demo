@@ -114,6 +114,24 @@ fn handle_client_message(
             info!(player_id, "assigned player id");
             send_message(network, connection_id, ServerMessage::Welcome { player_id });
         }
+        ClientMessage::Restart => {
+            if !joined_connections.contains(&connection_id) {
+                send_message(
+                    network,
+                    connection_id,
+                    ServerMessage::Error {
+                        message: "send Join before Restart".to_string(),
+                    },
+                );
+                return;
+            }
+
+            room.restart();
+            for joined_connection_id in joined_connections.iter().copied() {
+                send_message(network, joined_connection_id, ServerMessage::Restarted);
+            }
+            info!(player_id, "restarted game");
+        }
         ClientMessage::Ping { ping_seq } => {
             if !joined_connections.contains(&connection_id) {
                 send_message(
@@ -205,6 +223,8 @@ fn broadcast_room_state(
     network: &GameNetworkHost,
     delta_tracker: &mut StateDeltaTracker,
 ) {
+    delta_tracker.sync_restart_generation(room.restart_generation());
+
     let all_boxes = room.snapshot_for_player(0).boxes;
     let changed_boxes = delta_tracker.changed_boxes(&all_boxes);
 
@@ -226,6 +246,7 @@ fn broadcast_room_state(
 struct StateDeltaTracker {
     previous_boxes: HashMap<u64, BoxSnapshot>,
     initialized_connections: HashSet<ConnectionId>,
+    restart_generation: u64,
     config: Arc<GameConfig>,
 }
 
@@ -234,8 +255,19 @@ impl StateDeltaTracker {
         Self {
             previous_boxes: HashMap::new(),
             initialized_connections: HashSet::new(),
+            restart_generation: 0,
             config,
         }
+    }
+
+    fn sync_restart_generation(&mut self, restart_generation: u64) {
+        if self.restart_generation == restart_generation {
+            return;
+        }
+
+        self.restart_generation = restart_generation;
+        self.previous_boxes.clear();
+        self.initialized_connections.clear();
     }
 
     fn changed_boxes(&mut self, boxes: &[BoxSnapshot]) -> Vec<BoxSnapshot> {

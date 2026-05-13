@@ -74,7 +74,14 @@ export class GameClientApp {
         this.localPlayerId = message.playerId
         this.arena.setLocalPlayerId(message.playerId)
         this.debugPanel.setPlayerId(message.playerId)
+        this.debugPanel.setRestartEnabled(this.connected)
         this.debugPanel.log(`joined as player ${message.playerId}`)
+        return
+      }
+
+      if (message.type === 'restarted') {
+        this.resetGameplayState()
+        this.debugPanel.log('game restarted')
         return
       }
 
@@ -121,6 +128,10 @@ export class GameClientApp {
     this.elements.disconnectButton.addEventListener('click', () => {
       void this.disconnect()
     })
+
+    this.debugPanel.onRestart(() => {
+      void this.restart()
+    })
   }
 
   private async connect(): Promise<void> {
@@ -156,6 +167,22 @@ export class GameClientApp {
     this.debugPanel.setPlayerId(null)
     this.debugPanel.setRtt(null)
     this.setButtons(false)
+  }
+
+  private async restart(): Promise<void> {
+    if (!this.connected || this.localPlayerId === null) {
+      return
+    }
+
+    this.debugPanel.setRestartEnabled(false)
+    try {
+      await this.serverConnection.send({ type: 'restart' })
+    } catch (error) {
+      if (this.connected) {
+        this.debugPanel.log(`restart failed: ${String(error)}`)
+      }
+      this.debugPanel.setRestartEnabled(true)
+    }
   }
 
   // physics update
@@ -284,11 +311,15 @@ export class GameClientApp {
   private resetSessionState(): void {
     this.connected = false
     this.localPlayerId = null
+    this.resetGameplayState()
+  }
+
+  private resetGameplayState(): void {
     this.inputSeq = 0
     this.pingSeq = 0
     this.pendingPings.clear()
     this.pingElapsedMs = PING_SEND_MS
-    this.arena.setLocalPlayerId(null)
+    this.arena.setLocalPlayerId(this.localPlayerId)
     this.arena.clearPlayers()
     this.arena.clearBoxes()
     this.interpolator.reset()
@@ -296,10 +327,12 @@ export class GameClientApp {
     this.debugPanel.setServerTick(null)
     this.debugPanel.setPredictionMetrics(null)
     this.debugPanel.resetStateIntervalChart()
+    this.debugPanel.setRestartEnabled(this.connected && this.localPlayerId !== null)
   }
 
   private setButtons(connected: boolean): void {
     this.elements.connectButton.disabled = connected
     this.elements.disconnectButton.disabled = !connected
+    this.debugPanel.setRestartEnabled(connected && this.localPlayerId !== null)
   }
 }

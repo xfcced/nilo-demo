@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum ClientMessage {
     Join,
+    Restart,
     Ping {
         #[serde(rename = "pingSeq")]
         ping_seq: u64,
@@ -24,6 +25,7 @@ pub enum ServerMessage {
         #[serde(rename = "playerId")]
         player_id: u64,
     },
+    Restarted,
     Pong {
         #[serde(rename = "pingSeq")]
         ping_seq: u64,

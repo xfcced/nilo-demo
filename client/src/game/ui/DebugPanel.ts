@@ -24,6 +24,7 @@ const STATE_INTERVAL_CHART_MAX_MS = 120
 type DebugPanelElements = {
   panel: HTMLElement
   toggleButton: HTMLButtonElement
+  restartButton: HTMLButtonElement
   connectionValue: HTMLElement
   playerIdValue: HTMLElement
   rttValue: HTMLElement
@@ -52,6 +53,7 @@ export class DebugPanel {
     this.elements = {
       panel: getElement('debugPanel'),
       toggleButton: getElement('debugToggle'),
+      restartButton: getElement('restartButton'),
       connectionValue: getElement('connectionValue'),
       playerIdValue: getElement('playerIdValue'),
       rttValue: getElement('rttValue'),
@@ -75,6 +77,14 @@ export class DebugPanel {
     })
 
     this.drawStateIntervalChart()
+  }
+
+  onRestart(handler: () => void): void {
+    this.elements.restartButton.addEventListener('click', handler)
+  }
+
+  setRestartEnabled(enabled: boolean): void {
+    this.elements.restartButton.disabled = !enabled
   }
 
   private setVisible(visible: boolean): void {

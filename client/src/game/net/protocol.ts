@@ -1,9 +1,14 @@
 import { gameConfig } from '../config'
 
-export type ClientMessage = { type: 'join' } | { type: 'ping'; pingSeq: number } | { type: 'input'; seq: number; up: boolean; down: boolean; left: boolean; right: boolean }
+export type ClientMessage =
+  | { type: 'join' }
+  | { type: 'restart' }
+  | { type: 'ping'; pingSeq: number }
+  | { type: 'input'; seq: number; up: boolean; down: boolean; left: boolean; right: boolean }
 
 export type ServerMessage =
   | { type: 'welcome'; playerId: number }
+  | { type: 'restarted' }
   | { type: 'pong'; pingSeq: number }
   | { type: 'state'; serverTick: number; lastProcessedInputSeq: number; players: PlayerSnapshot[]; boxes: BoxSnapshot[] }
   | { type: 'error'; message: string }
@@ -116,6 +121,10 @@ function isServerMessage(value: unknown): value is ServerMessage {
 
   if (message.type === 'welcome') {
     return typeof message.playerId === 'number'
+  }
+
+  if (message.type === 'restarted') {
+    return true
   }
 
   if (message.type === 'pong') {
