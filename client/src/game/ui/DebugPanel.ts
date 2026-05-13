@@ -1,3 +1,5 @@
+import { gameConfig } from '../config'
+
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected'
 
 export type NetworkStats = {
@@ -16,6 +18,9 @@ export type PredictionMetrics = {
   correctionCount: number
 }
 
+const STATE_INTERVAL_SAMPLE_COUNT = 120
+const STATE_INTERVAL_CHART_MAX_MS = 120
+
 type DebugPanelElements = {
   panel: HTMLElement
   toggleButton: HTMLButtonElement
@@ -33,11 +38,15 @@ type DebugPanelElements = {
   predictionErrorValue: HTMLElement
   correctionValue: HTMLElement
   log: HTMLPreElement
+  stateIntervalValue: HTMLElement
+  stateIntervalChart: HTMLCanvasElement
 }
 
 export class DebugPanel {
   private elements: DebugPanelElements
   private visible = true
+  private lastStateReceivedAtMs: number | null = null
+  private stateIntervalSamples: number[] = []
 
   constructor() {
     this.elements = {
@@ -57,11 +66,15 @@ export class DebugPanel {
       predictionErrorValue: getElement('predictionErrorValue'),
       correctionValue: getElement('correctionValue'),
       log: getElement('log'),
+      stateIntervalValue: getElement('stateIntervalValue'),
+      stateIntervalChart: getElement('stateIntervalChart'),
     }
 
     this.elements.toggleButton.addEventListener('click', () => {
       this.setVisible(!this.visible)
     })
+
+    this.drawStateIntervalChart()
   }
 
   private setVisible(visible: boolean): void {
@@ -90,6 +103,27 @@ export class DebugPanel {
 
   setServerTick(serverTick: number | null): void {
     this.elements.serverTickValue.textContent = serverTick === null ? '-' : String(serverTick)
+  }
+
+  recordStateReceived(receivedAtMs: number): void {
+    if (this.lastStateReceivedAtMs !== null) {
+      const intervalMs = receivedAtMs - this.lastStateReceivedAtMs
+      this.stateIntervalSamples.push(intervalMs)
+      if (this.stateIntervalSamples.length > STATE_INTERVAL_SAMPLE_COUNT) {
+        this.stateIntervalSamples.shift()
+      }
+      this.elements.stateIntervalValue.textContent = `${intervalMs.toFixed(1)} ms`
+      this.drawStateIntervalChart()
+    }
+
+    this.lastStateReceivedAtMs = receivedAtMs
+  }
+
+  resetStateIntervalChart(): void {
+    this.lastStateReceivedAtMs = null
+    this.stateIntervalSamples = []
+    this.elements.stateIntervalValue.textContent = '-'
+    this.drawStateIntervalChart()
   }
 
   setNetworkStats(stats: NetworkStats | null): void {
@@ -127,6 +161,62 @@ export class DebugPanel {
     this.elements.log.textContent += `[${time}] ${message}\n`
     this.elements.log.scrollTop = this.elements.log.scrollHeight
   }
+
+  private drawStateIntervalChart(): void {
+    const canvas = this.elements.stateIntervalChart
+    const context = canvas.getContext('2d')
+    if (!context) {
+      return
+    }
+
+    const pixelRatio = Math.max(1, window.devicePixelRatio || 1)
+    const rect = canvas.getBoundingClientRect()
+    const width = Math.max(1, Math.round(rect.width * pixelRatio))
+    const height = Math.max(1, Math.round(rect.height * pixelRatio))
+    if (canvas.width !== width || canvas.height !== height) {
+      canvas.width = width
+      canvas.height = height
+    }
+
+    context.clearRect(0, 0, width, height)
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, width, height)
+
+    const paddingX = 6 * pixelRatio
+    const paddingY = 5 * pixelRatio
+    const chartWidth = width - paddingX * 2
+    const chartHeight = height - paddingY * 2
+    const expectedMs = 1000 / gameConfig.simulation.tickRate
+    const expectedY = valueToY(expectedMs, chartHeight, paddingY)
+
+    context.strokeStyle = '#d0d0d0'
+    context.lineWidth = pixelRatio
+    context.beginPath()
+    context.moveTo(paddingX, expectedY)
+    context.lineTo(width - paddingX, expectedY)
+    context.stroke()
+
+    if (this.stateIntervalSamples.length < 2) {
+      return
+    }
+
+    context.strokeStyle = '#2f6fda'
+    context.lineWidth = 1.5 * pixelRatio
+    context.beginPath()
+
+    const lastIndex = this.stateIntervalSamples.length - 1
+    for (let index = 0; index < this.stateIntervalSamples.length; index += 1) {
+      const x = paddingX + (chartWidth * index) / lastIndex
+      const y = valueToY(this.stateIntervalSamples[index], chartHeight, paddingY)
+      if (index === 0) {
+        context.moveTo(x, y)
+      } else {
+        context.lineTo(x, y)
+      }
+    }
+
+    context.stroke()
+  }
 }
 
 function getElement<T extends HTMLElement>(id: string): T {
@@ -152,4 +242,9 @@ function formatBytesPerSec(bytesPerSec: number): string {
   }
 
   return `${(kbPerSec / 1024).toFixed(1)} MB/s`
+}
+
+function valueToY(valueMs: number, chartHeight: number, paddingY: number): number {
+  const clamped = Math.max(0, Math.min(STATE_INTERVAL_CHART_MAX_MS, valueMs))
+  return paddingY + chartHeight - (clamped / STATE_INTERVAL_CHART_MAX_MS) * chartHeight
 }

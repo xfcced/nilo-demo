@@ -65,6 +65,7 @@ export class GameClientApp {
     this.debugPanel.setFps(null)
     this.debugPanel.setNetworkStats(null)
     this.debugPanel.setPredictionMetrics(null)
+    this.debugPanel.resetStateIntervalChart()
   }
 
   private bindConnectionEvents(): void {
@@ -89,8 +90,10 @@ export class GameClientApp {
       }
 
       if (message.type === 'state') {
+        const receivedAtMs = performance.now()
         this.debugPanel.setServerTick(message.serverTick)
-        this.interpolator.pushSnapshot(message, performance.now())
+        this.debugPanel.recordStateReceived(receivedAtMs)
+        this.interpolator.pushSnapshot(message, receivedAtMs)
         this.reconcileLocalPlayer(message)
         return
       }
@@ -134,6 +137,7 @@ export class GameClientApp {
       this.inputSeq = 0
       this.pingElapsedMs = PING_SEND_MS
       this.debugPanel.setConnection('connected')
+      this.debugPanel.resetStateIntervalChart()
       this.setButtons(true)
     } catch (error) {
       this.connected = false
@@ -291,6 +295,7 @@ export class GameClientApp {
     this.localPlayerPredictor.reset()
     this.debugPanel.setServerTick(null)
     this.debugPanel.setPredictionMetrics(null)
+    this.debugPanel.resetStateIntervalChart()
   }
 
   private setButtons(connected: boolean): void {
