@@ -192,18 +192,53 @@ export class DebugPanel {
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, width, height)
 
-    const paddingX = 6 * pixelRatio
-    const paddingY = 5 * pixelRatio
-    const chartWidth = width - paddingX * 2
-    const chartHeight = height - paddingY * 2
+    const leftPadding = 28 * pixelRatio
+    const rightPadding = 6 * pixelRatio
+    const topPadding = 5 * pixelRatio
+    const bottomPadding = 14 * pixelRatio
+    const chartLeft = leftPadding
+    const chartRight = width - rightPadding
+    const chartTop = topPadding
+    const chartBottom = height - bottomPadding
+    const chartWidth = chartRight - chartLeft
+    const chartHeight = chartBottom - chartTop
     const expectedMs = 1000 / gameConfig.simulation.tickRate
-    const expectedY = valueToY(expectedMs, chartHeight, paddingY)
+    const expectedY = valueToY(expectedMs, chartHeight, chartTop)
+
+    context.font = `${10 * pixelRatio}px ui-sans-serif, system-ui, sans-serif`
+    context.fillStyle = '#555555'
+    context.strokeStyle = '#eeeeee'
+    context.lineWidth = pixelRatio
+    context.textBaseline = 'middle'
+
+    for (const tickMs of [0, expectedMs, 60, 120]) {
+      const y = valueToY(tickMs, chartHeight, chartTop)
+      context.beginPath()
+      context.moveTo(chartLeft, y)
+      context.lineTo(chartRight, y)
+      context.stroke()
+      context.textAlign = 'right'
+      context.fillText(tickMs === expectedMs ? `${Math.round(tickMs)}*` : String(Math.round(tickMs)), chartLeft - 4 * pixelRatio, y)
+    }
+
+    context.strokeStyle = '#777777'
+    context.beginPath()
+    context.moveTo(chartLeft, chartTop)
+    context.lineTo(chartLeft, chartBottom)
+    context.lineTo(chartRight, chartBottom)
+    context.stroke()
+
+    context.textBaseline = 'top'
+    context.textAlign = 'left'
+    context.fillText('old', chartLeft, chartBottom + 3 * pixelRatio)
+    context.textAlign = 'right'
+    context.fillText('now', chartRight, chartBottom + 3 * pixelRatio)
 
     context.strokeStyle = '#d0d0d0'
     context.lineWidth = pixelRatio
     context.beginPath()
-    context.moveTo(paddingX, expectedY)
-    context.lineTo(width - paddingX, expectedY)
+    context.moveTo(chartLeft, expectedY)
+    context.lineTo(chartRight, expectedY)
     context.stroke()
 
     if (this.stateIntervalSamples.length < 2) {
@@ -216,8 +251,8 @@ export class DebugPanel {
 
     const lastIndex = this.stateIntervalSamples.length - 1
     for (let index = 0; index < this.stateIntervalSamples.length; index += 1) {
-      const x = paddingX + (chartWidth * index) / lastIndex
-      const y = valueToY(this.stateIntervalSamples[index], chartHeight, paddingY)
+      const x = chartLeft + (chartWidth * index) / lastIndex
+      const y = valueToY(this.stateIntervalSamples[index], chartHeight, chartTop)
       if (index === 0) {
         context.moveTo(x, y)
       } else {
