@@ -20,6 +20,13 @@ export type PredictionMetrics = {
 
 const STATE_INTERVAL_SAMPLE_COUNT = 120
 const STATE_INTERVAL_CHART_MAX_MS = 120
+const LOSS_SAMPLE_COUNT = 120
+const LOSS_CHART_MIN_MAX = 3
+
+type LossSample = {
+  stateLoss: number
+  inputLoss: number
+}
 
 type DebugPanelElements = {
   panel: HTMLElement
@@ -41,6 +48,8 @@ type DebugPanelElements = {
   log: HTMLPreElement
   stateIntervalValue: HTMLElement
   stateIntervalChart: HTMLCanvasElement
+  lossValue: HTMLElement
+  lossChart: HTMLCanvasElement
 }
 
 export class DebugPanel {
@@ -48,6 +57,9 @@ export class DebugPanel {
   private visible = true
   private lastStateReceivedAtMs: number | null = null
   private stateIntervalSamples: number[] = []
+  private previousLossServerTick: number | null = null
+  private previousLossInputSeq: number | null = null
+  private lossSamples: LossSample[] = []
 
   constructor() {
     this.elements = {
@@ -70,6 +82,8 @@ export class DebugPanel {
       log: getElement('log'),
       stateIntervalValue: getElement('stateIntervalValue'),
       stateIntervalChart: getElement('stateIntervalChart'),
+      lossValue: getElement('lossValue'),
+      lossChart: getElement('lossChart'),
     }
 
     this.elements.toggleButton.addEventListener('click', () => {
@@ -77,6 +91,7 @@ export class DebugPanel {
     })
 
     this.drawStateIntervalChart()
+    this.drawLossChart()
   }
 
   onRestart(handler: () => void): void {
@@ -134,6 +149,30 @@ export class DebugPanel {
     this.stateIntervalSamples = []
     this.elements.stateIntervalValue.textContent = '-'
     this.drawStateIntervalChart()
+  }
+
+  recordLossSample(serverTick: number, lastReceivedInputSeq: number): void {
+    if (this.previousLossServerTick !== null && this.previousLossInputSeq !== null) {
+      const stateLoss = Math.max(0, serverTick - this.previousLossServerTick - 1)
+      const inputLoss = Math.max(0, lastReceivedInputSeq - this.previousLossInputSeq - 1)
+      this.lossSamples.push({ stateLoss, inputLoss })
+      if (this.lossSamples.length > LOSS_SAMPLE_COUNT) {
+        this.lossSamples.shift()
+      }
+      this.elements.lossValue.textContent = `S:${stateLoss} I:${inputLoss}`
+      this.drawLossChart()
+    }
+
+    this.previousLossServerTick = serverTick
+    this.previousLossInputSeq = lastReceivedInputSeq
+  }
+
+  resetLossChart(): void {
+    this.previousLossServerTick = null
+    this.previousLossInputSeq = null
+    this.lossSamples = []
+    this.elements.lossValue.textContent = '-'
+    this.drawLossChart()
   }
 
   setNetworkStats(stats: NetworkStats | null): void {
@@ -262,6 +301,116 @@ export class DebugPanel {
 
     context.stroke()
   }
+
+  private drawLossChart(): void {
+    const canvas = this.elements.lossChart
+    const context = canvas.getContext('2d')
+    if (!context) {
+      return
+    }
+
+    const { width, height, pixelRatio } = prepareCanvas(canvas, context)
+    const leftPadding = 34 * pixelRatio
+    const rightPadding = 8 * pixelRatio
+    const topPadding = 14 * pixelRatio
+    const bottomPadding = 22 * pixelRatio
+    const chartLeft = leftPadding
+    const chartRight = width - rightPadding
+    const chartTop = topPadding
+    const chartBottom = height - bottomPadding
+    const chartWidth = chartRight - chartLeft
+    const chartHeight = chartBottom - chartTop
+    const maxLoss = Math.max(
+      LOSS_CHART_MIN_MAX,
+      ...this.lossSamples.flatMap((sample) => [sample.stateLoss, sample.inputLoss]),
+    )
+    const midLoss = Math.ceil(maxLoss / 2)
+
+    context.font = `${10 * pixelRatio}px ui-sans-serif, system-ui, sans-serif`
+    context.fillStyle = '#555555'
+    context.strokeStyle = '#eeeeee'
+    context.lineWidth = pixelRatio
+    context.textBaseline = 'middle'
+
+    for (const loss of [0, midLoss, maxLoss]) {
+      const y = lossToY(loss, maxLoss, chartHeight, chartTop)
+      context.beginPath()
+      context.moveTo(chartLeft, y)
+      context.lineTo(chartRight, y)
+      context.stroke()
+      context.textAlign = 'right'
+      context.fillText(String(loss), chartLeft - 4 * pixelRatio, y)
+    }
+
+    context.strokeStyle = '#777777'
+    context.beginPath()
+    context.moveTo(chartLeft, chartTop)
+    context.lineTo(chartLeft, chartBottom)
+    context.lineTo(chartRight, chartBottom)
+    context.stroke()
+
+    context.textBaseline = 'top'
+    context.textAlign = 'left'
+    context.fillText('old', chartLeft, chartBottom + 3 * pixelRatio)
+    context.textAlign = 'right'
+    context.fillText('now', chartRight, chartBottom + 3 * pixelRatio)
+    context.textAlign = 'left'
+    context.fillText('lost/sample', chartLeft, 2 * pixelRatio)
+
+    drawLossLine(context, this.lossSamples, 'stateLoss', '#2f6fda', chartLeft, chartWidth, chartHeight, chartTop, maxLoss, pixelRatio)
+    drawLossLine(context, this.lossSamples, 'inputLoss', '#d64545', chartLeft, chartWidth, chartHeight, chartTop, maxLoss, pixelRatio)
+  }
+}
+
+function prepareCanvas(canvas: HTMLCanvasElement, context: CanvasRenderingContext2D): { width: number; height: number; pixelRatio: number } {
+  const pixelRatio = Math.max(1, window.devicePixelRatio || 1)
+  const rect = canvas.getBoundingClientRect()
+  const width = Math.max(1, Math.round(rect.width * pixelRatio))
+  const height = Math.max(1, Math.round(rect.height * pixelRatio))
+  if (canvas.width !== width || canvas.height !== height) {
+    canvas.width = width
+    canvas.height = height
+  }
+
+  context.clearRect(0, 0, width, height)
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, width, height)
+
+  return { width, height, pixelRatio }
+}
+
+function drawLossLine(
+  context: CanvasRenderingContext2D,
+  samples: LossSample[],
+  key: keyof LossSample,
+  color: string,
+  chartLeft: number,
+  chartWidth: number,
+  chartHeight: number,
+  chartTop: number,
+  maxLoss: number,
+  pixelRatio: number,
+): void {
+  if (samples.length < 2) {
+    return
+  }
+
+  context.strokeStyle = color
+  context.lineWidth = 1.5 * pixelRatio
+  context.beginPath()
+
+  const lastIndex = samples.length - 1
+  for (let index = 0; index < samples.length; index += 1) {
+    const x = chartLeft + (chartWidth * index) / lastIndex
+    const y = lossToY(samples[index][key], maxLoss, chartHeight, chartTop)
+    if (index === 0) {
+      context.moveTo(x, y)
+    } else {
+      context.lineTo(x, y)
+    }
+  }
+
+  context.stroke()
 }
 
 function getElement<T extends HTMLElement>(id: string): T {
@@ -292,4 +441,9 @@ function formatBytesPerSec(bytesPerSec: number): string {
 function valueToY(valueMs: number, chartHeight: number, paddingY: number): number {
   const clamped = Math.max(0, Math.min(STATE_INTERVAL_CHART_MAX_MS, valueMs))
   return paddingY + chartHeight - (clamped / STATE_INTERVAL_CHART_MAX_MS) * chartHeight
+}
+
+function lossToY(loss: number, maxLoss: number, chartHeight: number, paddingY: number): number {
+  const clamped = Math.max(0, Math.min(maxLoss, loss))
+  return paddingY + chartHeight - (clamped / maxLoss) * chartHeight
 }

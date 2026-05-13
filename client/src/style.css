@@ -172,12 +172,14 @@ button:disabled {
   white-space: pre-wrap;
 }
 
-.jitter-chart {
+.jitter-chart,
+.loss-chart {
   display: grid;
   gap: 2px;
 }
 
-.jitter-chart-header {
+.jitter-chart-header,
+.loss-chart-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -187,12 +189,49 @@ button:disabled {
   line-height: 1.1;
 }
 
-#stateIntervalChart {
+.loss-chart-legend {
+  display: flex;
+  gap: 10px;
+  color: #000000;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.loss-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.loss-chart-legend i {
+  width: 12px;
+  height: 2px;
+  display: inline-block;
+}
+
+.loss-state-key {
+  background: #2f6fda;
+}
+
+.loss-input-key {
+  background: #d64545;
+}
+
+#stateIntervalChart,
+#lossChart {
   width: 100%;
-  height: 72px;
   display: block;
   border: 1px solid #777777;
   background: #ffffff;
+}
+
+#stateIntervalChart {
+  height: 72px;
+}
+
+#lossChart {
+  height: 88px;
 }
 
 @media (max-width: 620px) {

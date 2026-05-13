@@ -105,6 +105,7 @@ export class GameClientApp {
 
         this.debugPanel.setServerTick(message.serverTick)
         this.debugPanel.recordStateReceived(receivedAtMs)
+        this.debugPanel.recordLossSample(message.serverTick, message.lastReceivedInputSeq)
         this.reconcileLocalPlayer(message)
         return
       }
@@ -154,6 +155,7 @@ export class GameClientApp {
       this.pingElapsedMs = PING_SEND_MS
       this.debugPanel.setConnection('connected')
       this.debugPanel.resetStateIntervalChart()
+      this.debugPanel.resetLossChart()
       this.setButtons(true)
     } catch (error) {
       this.connected = false
@@ -345,6 +347,7 @@ export class GameClientApp {
     this.debugPanel.setServerTick(null)
     this.debugPanel.setPredictionMetrics(null)
     this.debugPanel.resetStateIntervalChart()
+    this.debugPanel.resetLossChart()
     this.debugPanel.setRestartEnabled(this.connected && this.localPlayerId !== null)
   }
 

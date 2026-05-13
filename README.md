@@ -157,26 +157,51 @@ The production client build leaves `VITE_CERTIFICATE_HASH` empty because a publi
 The client opens a named reliable `control` channel over a bidirectional WebTransport stream. Each stream starts with a length-prefixed UTF-8 channel-name frame, then carries length-prefixed payload frames. Low-rate control messages are still JSON:
 
 ```ts
-type ClientMessage = { type: 'join' } | { type: 'ping'; pingSeq: number }
+type ClientMessage =
+  | { type: 'join' }
+  | { type: 'restart' }
+  | { type: 'ping'; pingSeq: number }
 ```
 
 Server messages:
 
 ```ts
-type ServerMessage = { type: 'welcome'; playerId: number } | { type: 'pong'; pingSeq: number } | { type: 'error'; message: string }
+type ServerMessage =
+  | { type: 'welcome'; playerId: number }
+  | { type: 'restarted' }
+  | { type: 'pong'; pingSeq: number }
+  | { type: 'error'; message: string }
 ```
 
 High-rate `input` and `state` messages use WebTransport datagrams with a compact big-endian binary format. The first byte is the message type:
 
 ```text
-input: u8 type=1, u32 inputSeq, u8 buttons
-state: u8 type=2, u32 serverTick, u32 lastReceivedInputSeq, u8 playerCount, u8 changedBoxCount, players, changedBoxes
-player: u8 playerId, i16 xCm, i16 yCm, i16 zCm, i16 vxCmPerSec, i16 vyCmPerSec, i16 vzCmPerSec
-box: u8 boxId, i16 xCm, i16 yCm, i16 zCm, u8 largestQuatIndex, i16 qA, i16 qB, i16 qC
+input datagram, 6 bytes:
+  u8  type = 1
+  u32 inputSeq
+  u8  buttons bitmask: up=1, down=2, left=4, right=8
+
+state datagram, 11-byte header + players + changed boxes:
+  u8  type = 2
+  u32 serverTick
+  u32 lastReceivedInputSeq
+  u8  playerCount
+  u8  changedBoxCount
+
+player, 13 bytes:
+  u8  playerId
+  i16 x, y, z
+  i16 vx, vy, vz
+
+box, 14 bytes:
+  u8  boxId
+  i16 x, y, z
+  u8  largestQuatIndex
+  i16 qA, qB, qC
 ```
 
-Box rotations use smallest-three quaternion compression: the largest absolute component is omitted, the quaternion is sign-flipped if needed so the omitted component is positive, and the other three components are quantized into `i16`.
+Positions and velocities are quantized with `protocol.positionScale`; quaternion components are quantized with `protocol.quaternionScale`. Box rotations use smallest-three quaternion compression: the largest absolute component is omitted, the quaternion is sign-flipped if needed so the omitted component is positive, and the other three components are quantized into `i16`.
 
-State datagrams always include all current players. `serverTick` is the authoritative simulation timeline used for reconciliation: the client resets to the authoritative state for that tick, drops local prediction history at or before that tick, then replays newer local prediction inputs. `lastReceivedInputSeq` is connection-local debug/ack data for the newest input packet the server accepted; it is not used as the replay boundary. New connections receive one full box baseline, then boxes are changed-only: if a box's quantized position and rotation match the last server snapshot, it is omitted and the client keeps its previous box state.
+State datagrams always include all current players. `serverTick` is the authoritative simulation timeline used for reconciliation: the client resets to the authoritative state for that tick, drops local prediction history at or before that tick, then replays newer local prediction inputs. `lastReceivedInputSeq` is connection-local debug/ack data for the newest input packet the server accepted; it is not used as the replay boundary. The server ignores repeated or older `inputSeq` values for a connection and otherwise applies the latest accepted input on subsequent simulation ticks. New connections receive one full box baseline, then boxes are changed-only: if a box's quantized position and rotation match the last server snapshot, it is omitted and the client keeps its previous box state.
 
 `serverTick` is the interpolation timeline. Ping RTT is measured entirely on the client by matching `ping.pingSeq` to `pong.pingSeq`.
