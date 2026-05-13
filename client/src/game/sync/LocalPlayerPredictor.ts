@@ -21,7 +21,7 @@ type PendingInput = MovementInput & {
   seq: number
 }
 
-type PredictedState = {
+type PredictedPosition = {
   x: number
   y: number
   z: number
@@ -37,11 +37,10 @@ export class LocalPlayerPredictor {
   private pendingInputs: PendingInput[] = []
   private world: World | null = null
   private playerBody: RigidBody | null = null
-  private previousVisualState: PredictedState | null = null
-  private currentVisualState: PredictedState | null = null
   private correctionOffsetX = 0
   private correctionOffsetY = 0
   private correctionOffsetZ = 0
+  private lastRenderedPosition: PredictedPosition | null = null
   private lastAckedInputSeq = 0
   private predictionError = 0
   private correctionCount = 0
@@ -54,6 +53,7 @@ export class LocalPlayerPredictor {
     })
   }
 
+  // Stores local input and immediately predicts one local physics step.
   pushLocalInput(seq: number, input: MovementInput, deltaSeconds: number): void {
     this.pendingInputs.push({ seq, ...input })
 
@@ -62,10 +62,10 @@ export class LocalPlayerPredictor {
     }
 
     this.stepWorld(input, deltaSeconds)
-    this.recordVisualState()
     this.decayCorrection(deltaSeconds)
   }
 
+  // Replays unacknowledged inputs from the latest server-authoritative state.
   reconcile(authoritative: PlayerSnapshot, lastProcessedInputSeq: number, deltaSeconds: number): void {
     this.lastAckedInputSeq = Math.max(this.lastAckedInputSeq, lastProcessedInputSeq)
     this.pendingInputs = this.pendingInputs.filter((input) => input.seq > this.lastAckedInputSeq)
@@ -78,41 +78,42 @@ export class LocalPlayerPredictor {
       this.createWorld(authoritative)
     }
 
-    const previousRenderState = this.renderState()
+    const previousRenderedPosition = this.lastRenderedPosition ?? this.renderPosition(0)
+    const previousPredictedPosition = this.physicsPosition()
     this.resetPlayerToAuthoritative(authoritative)
 
     for (const input of this.pendingInputs) {
       this.stepWorld(input, deltaSeconds)
     }
 
-    const corrected = this.physicsState()
-    this.predictionError = previousRenderState && corrected ? distance(previousRenderState, corrected) : 0
+    const corrected = this.physicsPosition()
+    this.predictionError = previousPredictedPosition && corrected ? distance(previousPredictedPosition, corrected) : 0
 
     if (this.predictionError < IGNORE_ERROR_METERS) {
-      this.recordVisualState()
       return
     }
 
     this.correctionCount += 1
-    this.resetVisualStateToCurrentPhysics()
-    if (this.predictionError > SNAP_ERROR_METERS || !previousRenderState || !corrected) {
+    if (this.predictionError > SNAP_ERROR_METERS || !previousRenderedPosition || !corrected) {
       this.correctionOffsetX = 0
       this.correctionOffsetY = 0
       this.correctionOffsetZ = 0
       return
     }
 
-    this.correctionOffsetX = previousRenderState.x - corrected.x
-    this.correctionOffsetY = previousRenderState.y - corrected.y
-    this.correctionOffsetZ = previousRenderState.z - corrected.z
+    this.correctionOffsetX = previousRenderedPosition.x - corrected.x
+    this.correctionOffsetY = previousRenderedPosition.y - corrected.y
+    this.correctionOffsetZ = previousRenderedPosition.z - corrected.z
   }
 
+  // Returns the predicted local player state for rendering.
   renderPlayer(playerId: number, alpha: number): RenderPlayer | null {
-    const rendered = this.renderState(alpha)
+    const rendered = this.renderPosition(alpha)
     if (!rendered) {
       return null
     }
 
+    this.lastRenderedPosition = rendered
     return {
       playerId,
       isLocal: true,
@@ -122,6 +123,7 @@ export class LocalPlayerPredictor {
     }
   }
 
+  // Exposes prediction state for the debug panel.
   metrics(): PredictionMetrics {
     return {
       pendingInputCount: this.pendingInputs.length,
@@ -131,16 +133,16 @@ export class LocalPlayerPredictor {
     }
   }
 
+  // Clears local prediction state when the session ends.
   reset(): void {
     this.pendingInputs = []
     this.world?.free()
     this.world = null
     this.playerBody = null
-    this.previousVisualState = null
-    this.currentVisualState = null
     this.correctionOffsetX = 0
     this.correctionOffsetY = 0
     this.correctionOffsetZ = 0
+    this.lastRenderedPosition = null
     this.lastAckedInputSeq = 0
     this.predictionError = 0
     this.correctionCount = 0
@@ -160,7 +162,6 @@ export class LocalPlayerPredictor {
     this.playerBody = this.world.createRigidBody(body)
     const collider = RAPIER.ColliderDesc.ball(gameConfig.player.radius).setFriction(1.0).setRestitution(0.0)
     this.world.createCollider(collider, this.playerBody)
-    this.recordVisualState()
   }
 
   private buildStaticArena(): void {
@@ -244,8 +245,15 @@ export class LocalPlayerPredictor {
     )
   }
 
-  private renderState(alpha = 1): PredictedState | null {
-    const state = this.visualState(alpha) ?? this.physicsState()
+  private decayCorrection(deltaSeconds: number): void {
+    const alpha = Math.min(1, deltaSeconds / CORRECTION_DURATION_SECONDS)
+    this.correctionOffsetX = moveToward(this.correctionOffsetX, 0, Math.abs(this.correctionOffsetX) * alpha)
+    this.correctionOffsetY = moveToward(this.correctionOffsetY, 0, Math.abs(this.correctionOffsetY) * alpha)
+    this.correctionOffsetZ = moveToward(this.correctionOffsetZ, 0, Math.abs(this.correctionOffsetZ) * alpha)
+  }
+
+  private renderPosition(alpha = 0): PredictedPosition | null {
+    const state = this.extrapolatedPhysicsPosition(alpha)
     if (!state) {
       return null
     }
@@ -257,44 +265,23 @@ export class LocalPlayerPredictor {
     }
   }
 
-  private recordVisualState(): void {
-    const state = this.physicsState()
-    if (!state) {
-      return
-    }
-
-    this.previousVisualState = this.currentVisualState ?? state
-    this.currentVisualState = state
-  }
-
-  private resetVisualStateToCurrentPhysics(): void {
-    const state = this.physicsState()
-    if (!state) {
-      return
-    }
-
-    this.previousVisualState = state
-    this.currentVisualState = state
-  }
-
-  private visualState(alpha: number): PredictedState | null {
-    if (!this.currentVisualState) {
-      return null
-    }
-
-    if (!this.previousVisualState) {
-      return this.currentVisualState
+  private extrapolatedPhysicsPosition(alpha: number): PredictedPosition | null {
+    const position = this.physicsPosition()
+    const velocity = this.playerBody?.linvel()
+    if (!position || !velocity) {
+      return position
     }
 
     const t = Math.max(0, Math.min(1, alpha))
+    const frameLeadSeconds = t / gameConfig.simulation.tickRate
     return {
-      x: lerp(this.previousVisualState.x, this.currentVisualState.x, t),
-      y: lerp(this.previousVisualState.y, this.currentVisualState.y, t),
-      z: lerp(this.previousVisualState.z, this.currentVisualState.z, t),
+      x: position.x + velocity.x * frameLeadSeconds,
+      y: position.y + velocity.y * frameLeadSeconds,
+      z: position.z + velocity.z * frameLeadSeconds,
     }
   }
 
-  private physicsState(): PredictedState | null {
+  private physicsPosition(): PredictedPosition | null {
     const position = this.playerBody?.translation()
     if (!position) {
       return null
@@ -305,13 +292,6 @@ export class LocalPlayerPredictor {
       y: position.y,
       z: position.z,
     }
-  }
-
-  private decayCorrection(deltaSeconds: number): void {
-    const alpha = Math.min(1, deltaSeconds / CORRECTION_DURATION_SECONDS)
-    this.correctionOffsetX = moveToward(this.correctionOffsetX, 0, Math.abs(this.correctionOffsetX) * alpha)
-    this.correctionOffsetY = moveToward(this.correctionOffsetY, 0, Math.abs(this.correctionOffsetY) * alpha)
-    this.correctionOffsetZ = moveToward(this.correctionOffsetZ, 0, Math.abs(this.correctionOffsetZ) * alpha)
   }
 }
 
@@ -324,10 +304,6 @@ function moveToward(current: number, target: number, maxDelta: number): number {
   return current + Math.sign(delta) * maxDelta
 }
 
-function lerp(from: number, to: number, alpha: number): number {
-  return from + (to - from) * alpha
-}
-
-function distance(a: PredictedState, b: PredictedState): number {
+function distance(a: PredictedPosition, b: PredictedPosition): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
 }
