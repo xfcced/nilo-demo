@@ -27,6 +27,12 @@ type PredictedPosition = {
   z: number
 }
 
+export type LocalPredictionDebugState = {
+  authoritative: PredictedPosition | null
+  predictedPhysics: PredictedPosition | null
+  renderedVisual: PredictedPosition | null
+}
+
 const IGNORE_ERROR_METERS = 0.02
 const SNAP_ERROR_METERS = 0.5
 const CORRECTION_DURATION_SECONDS = 0.1
@@ -41,6 +47,7 @@ export class LocalPlayerPredictor {
   private correctionOffsetY = 0
   private correctionOffsetZ = 0
   private correctionElapsedSeconds = CORRECTION_DURATION_SECONDS
+  private lastAuthoritativePosition: PredictedPosition | null = null
   private lastRenderedPosition: PredictedPosition | null = null
   private lastAckedInputSeq = 0
   private predictionError = 0
@@ -67,6 +74,11 @@ export class LocalPlayerPredictor {
 
   // Replays unacknowledged inputs from the latest server-authoritative state.
   reconcile(authoritative: PlayerSnapshot, lastProcessedInputSeq: number, deltaSeconds: number): void {
+    this.lastAuthoritativePosition = {
+      x: authoritative.x,
+      y: authoritative.y,
+      z: authoritative.z,
+    }
     this.lastAckedInputSeq = Math.max(this.lastAckedInputSeq, lastProcessedInputSeq)
     this.pendingInputs = this.pendingInputs.filter((input) => input.seq > this.lastAckedInputSeq)
 
@@ -137,6 +149,14 @@ export class LocalPlayerPredictor {
     }
   }
 
+  debugState(): LocalPredictionDebugState {
+    return {
+      authoritative: this.lastAuthoritativePosition,
+      predictedPhysics: this.physicsPosition(),
+      renderedVisual: this.lastRenderedPosition,
+    }
+  }
+
   // Clears local prediction state when the session ends.
   reset(): void {
     this.pendingInputs = []
@@ -147,6 +167,7 @@ export class LocalPlayerPredictor {
     this.correctionOffsetY = 0
     this.correctionOffsetZ = 0
     this.correctionElapsedSeconds = CORRECTION_DURATION_SECONDS
+    this.lastAuthoritativePosition = null
     this.lastRenderedPosition = null
     this.lastAckedInputSeq = 0
     this.predictionError = 0

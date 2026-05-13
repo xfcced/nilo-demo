@@ -210,6 +210,7 @@ export class GameClientApp {
     this.updateFps(frameMs)
     this.updateNetworkStats(frameMs)
     const localPlayer = this.localPlayerId === null ? null : this.localPlayerPredictor.renderPlayer(this.localPlayerId, alpha, frameMs / 1000)
+    this.arena.setLocalPredictionDebug(localPlayer ? this.localPlayerPredictor.debugState() : null)
     this.arena.applyRenderState(this.interpolator.sample(performance.now(), this.localPlayerId, localPlayer))
     this.arena.render()
   }
@@ -325,6 +326,7 @@ export class GameClientApp {
     this.arena.setLocalPlayerId(this.localPlayerId)
     this.arena.clearPlayers()
     this.arena.clearBoxes()
+    this.arena.clearLocalPredictionDebug()
     this.interpolator.reset()
     this.localPlayerPredictor.reset()
     this.debugPanel.setServerTick(null)

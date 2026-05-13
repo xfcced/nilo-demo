@@ -1,6 +1,9 @@
 import * as THREE from 'three'
 import { gameConfig } from './config'
+import type { LocalPredictionDebugState } from './sync/LocalPlayerPredictor'
 import type { RenderBox, RenderPlayer, RenderWorldState } from './renderState'
+
+type DebugMarkerName = keyof LocalPredictionDebugState
 
 export class ArenaScene {
   private renderer: THREE.WebGLRenderer
@@ -8,6 +11,8 @@ export class ArenaScene {
   private camera: THREE.PerspectiveCamera
   private players = new Map<number, THREE.Mesh>()
   private boxes = new Map<number, THREE.Mesh>()
+  private predictionDebugMarkers = new Map<DebugMarkerName, THREE.Mesh>()
+  private predictionDebugLine: THREE.Line | null = null
   private localPlayerId: number | null = null
 
   constructor(canvas: HTMLCanvasElement) {
@@ -39,6 +44,7 @@ export class ArenaScene {
   dispose(): void {
     this.clearPlayers()
     this.clearBoxes()
+    this.clearLocalPredictionDebug()
     this.renderer.dispose()
   }
 
@@ -52,6 +58,42 @@ export class ArenaScene {
   applyRenderState(state: RenderWorldState): void {
     this.setPlayers(state.players)
     this.setBoxes(state.boxes)
+  }
+
+  setLocalPredictionDebug(state: LocalPredictionDebugState | null): void {
+    if (!state) {
+      this.clearLocalPredictionDebug()
+      return
+    }
+
+    const markerColors: Record<DebugMarkerName, number> = {
+      authoritative: 0xff3b30,
+      predictedPhysics: 0xffcc00,
+      renderedVisual: 0x00c7d9,
+    }
+
+    const markerOrder: DebugMarkerName[] = ['authoritative', 'predictedPhysics', 'renderedVisual']
+    const linePoints: THREE.Vector3[] = []
+
+    for (const markerName of markerOrder) {
+      const position = state[markerName]
+      if (!position) {
+        this.removePredictionDebugMarker(markerName)
+        continue
+      }
+
+      let marker = this.predictionDebugMarkers.get(markerName)
+      if (!marker) {
+        marker = this.createPredictionDebugMarker(markerColors[markerName])
+        this.predictionDebugMarkers.set(markerName, marker)
+        this.scene.add(marker)
+      }
+
+      marker.position.set(position.x, position.y, position.z)
+      linePoints.push(new THREE.Vector3(position.x, position.y, position.z))
+    }
+
+    this.setPredictionDebugLine(linePoints)
   }
 
   private setPlayers(players: RenderPlayer[]): void {
@@ -122,6 +164,26 @@ export class ArenaScene {
     this.boxes.clear()
   }
 
+  clearLocalPredictionDebug(): void {
+    for (const marker of this.predictionDebugMarkers.values()) {
+      this.scene.remove(marker)
+      this.disposeMesh(marker)
+    }
+    this.predictionDebugMarkers.clear()
+
+    if (this.predictionDebugLine) {
+      this.scene.remove(this.predictionDebugLine)
+      this.predictionDebugLine.geometry.dispose()
+      const material = this.predictionDebugLine.material
+      if (Array.isArray(material)) {
+        material.forEach((entry) => entry.dispose())
+      } else {
+        material.dispose()
+      }
+      this.predictionDebugLine = null
+    }
+  }
+
   private buildArena(): void {
     const ambientLight = new THREE.HemisphereLight(0xffffff, 0x7c8790, 2.8)
     this.scene.add(ambientLight)
@@ -175,6 +237,63 @@ export class ArenaScene {
         metalness: 0.02,
       }),
     )
+  }
+
+  private createPredictionDebugMarker(color: number): THREE.Mesh {
+    return new THREE.Mesh(
+      new THREE.SphereGeometry(gameConfig.player.radius * 1.12, 16, 12),
+      new THREE.MeshBasicMaterial({
+        color,
+        wireframe: true,
+        depthTest: false,
+      }),
+    )
+  }
+
+  private removePredictionDebugMarker(markerName: DebugMarkerName): void {
+    const marker = this.predictionDebugMarkers.get(markerName)
+    if (!marker) {
+      return
+    }
+
+    this.scene.remove(marker)
+    this.disposeMesh(marker)
+    this.predictionDebugMarkers.delete(markerName)
+  }
+
+  private setPredictionDebugLine(points: THREE.Vector3[]): void {
+    if (points.length < 2) {
+      if (this.predictionDebugLine) {
+        this.scene.remove(this.predictionDebugLine)
+        this.predictionDebugLine.geometry.dispose()
+        const material = this.predictionDebugLine.material
+        if (Array.isArray(material)) {
+          material.forEach((entry) => entry.dispose())
+        } else {
+          material.dispose()
+        }
+        this.predictionDebugLine = null
+      }
+      return
+    }
+
+    const geometry = new THREE.BufferGeometry().setFromPoints(points)
+    if (!this.predictionDebugLine) {
+      this.predictionDebugLine = new THREE.Line(
+        geometry,
+        new THREE.LineBasicMaterial({
+          color: 0x111111,
+          depthTest: false,
+          transparent: true,
+          opacity: 0.72,
+        }),
+      )
+      this.scene.add(this.predictionDebugLine)
+      return
+    }
+
+    this.predictionDebugLine.geometry.dispose()
+    this.predictionDebugLine.geometry = geometry
   }
 
   private setPlayerMaterial(player: THREE.Mesh, isLocal: boolean): void {
