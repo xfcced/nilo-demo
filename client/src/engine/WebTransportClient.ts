@@ -14,6 +14,11 @@ type ReliableChannel = {
   writer: WritableStreamDefaultWriter<Uint8Array>
 }
 
+type WebTransportDatagrams = WebTransport['datagrams'] & {
+  createWritable?: () => WritableStream<Uint8Array>
+  writable?: WritableStream<Uint8Array>
+}
+
 const FRAME_HEADER_BYTES = 4
 const MAX_FRAME_BYTES = 1024 * 1024
 
@@ -39,7 +44,7 @@ export class WebTransportClient {
 
     await this.transport.ready
 
-    this.datagramWriter = this.transport.datagrams.writable.getWriter() as WritableStreamDefaultWriter<Uint8Array>
+    this.datagramWriter = createDatagramWriter(this.transport)
     void this.readDatagrams(this.transport.datagrams.readable as ReadableStream<Uint8Array>)
 
     this.transport.closed
@@ -232,6 +237,17 @@ function createEmptyCounters(): TransportCounters {
     rxBytes: 0,
     txBytes: 0,
   }
+}
+
+function createDatagramWriter(transport: WebTransport): WritableStreamDefaultWriter<Uint8Array> {
+  const datagrams = transport.datagrams as WebTransportDatagrams
+  const writable = datagrams.createWritable?.() ?? datagrams.writable
+
+  if (!writable) {
+    throw new Error('This browser does not support writable WebTransport datagrams')
+  }
+
+  return writable.getWriter()
 }
 
 function encodeFrame(payload: Uint8Array): Uint8Array {
