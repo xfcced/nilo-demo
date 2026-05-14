@@ -227,6 +227,60 @@ button:disabled {
   height: 72px;
 }
 
+#movementControls {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 2;
+  display: none;
+  grid-template-columns: repeat(3, 54px);
+  grid-template-rows: repeat(3, 54px);
+  gap: 8px;
+  touch-action: none;
+  user-select: none;
+}
+
+.movement-button {
+  width: 54px;
+  min-width: 54px;
+  height: 54px;
+  padding: 0;
+  border: 1px solid rgba(0, 0, 0, 0.72);
+  border-radius: 8px;
+  color: #000000;
+  background: rgba(255, 255, 255, 0.78);
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+
+.movement-button:active {
+  background: rgba(210, 229, 244, 0.9);
+  transform: translateY(1px);
+}
+
+.movement-up {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.movement-left {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.movement-down {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.movement-right {
+  grid-column: 3;
+  grid-row: 2;
+}
+
 @media (max-width: 620px) {
   #debugPanel {
     top: 32px;
@@ -242,5 +296,15 @@ button:disabled {
   .debug-toggle {
     top: 4px;
     left: 4px;
+  }
+
+  #movementControls {
+    display: grid;
+  }
+}
+
+@media (hover: none) and (pointer: coarse) {
+  #movementControls {
+    display: grid;
   }
 }

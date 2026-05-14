@@ -5,8 +5,16 @@ export type MovementInput = {
   right: boolean
 }
 
+export type MovementDirection = keyof MovementInput
+
 export class KeyboardInput {
   private pressedKeys = new Set<string>()
+  private virtualMovement: MovementInput = {
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+  }
 
   constructor() {
     window.addEventListener('keydown', (event) => {
@@ -25,16 +33,28 @@ export class KeyboardInput {
 
     window.addEventListener('blur', () => {
       this.pressedKeys.clear()
+      this.clearVirtualMovement()
     })
+  }
+
+  setVirtualDirection(direction: MovementDirection, pressed: boolean): void {
+    this.virtualMovement[direction] = pressed
   }
 
   currentMovement(): MovementInput {
     return {
-      up: this.pressedKeys.has('KeyW') || this.pressedKeys.has('ArrowUp'),
-      down: this.pressedKeys.has('KeyS') || this.pressedKeys.has('ArrowDown'),
-      left: this.pressedKeys.has('KeyA') || this.pressedKeys.has('ArrowLeft'),
-      right: this.pressedKeys.has('KeyD') || this.pressedKeys.has('ArrowRight'),
+      up: this.virtualMovement.up || this.pressedKeys.has('KeyW') || this.pressedKeys.has('ArrowUp'),
+      down: this.virtualMovement.down || this.pressedKeys.has('KeyS') || this.pressedKeys.has('ArrowDown'),
+      left: this.virtualMovement.left || this.pressedKeys.has('KeyA') || this.pressedKeys.has('ArrowLeft'),
+      right: this.virtualMovement.right || this.pressedKeys.has('KeyD') || this.pressedKeys.has('ArrowRight'),
     }
+  }
+
+  private clearVirtualMovement(): void {
+    this.virtualMovement.up = false
+    this.virtualMovement.down = false
+    this.virtualMovement.left = false
+    this.virtualMovement.right = false
   }
 }
 

@@ -6,6 +6,7 @@ export type AppElements = {
   connectButton: HTMLButtonElement
   disconnectButton: HTMLButtonElement
   canvas: HTMLCanvasElement
+  movementButtons: NodeListOf<HTMLButtonElement>
 }
 
 export function getAppElements(): AppElements {
@@ -15,5 +16,6 @@ export function getAppElements(): AppElements {
     connectButton: getElement('connectButton'),
     disconnectButton: getElement('disconnectButton'),
     canvas: getElement('scene'),
+    movementButtons: document.querySelectorAll<HTMLButtonElement>('[data-movement-direction]'),
   }
 }

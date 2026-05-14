@@ -1,5 +1,5 @@
 import { GameLoop } from '../engine/GameLoop'
-import { KeyboardInput } from '../engine/KeyboardInput'
+import { KeyboardInput, type MovementDirection } from '../engine/KeyboardInput'
 import type { TransportCounters } from '../engine/WebTransportClient'
 import { type AppElements, getAppElements } from './appElements'
 import { ArenaScene } from './ArenaScene'
@@ -136,6 +136,37 @@ export class GameClientApp {
 
     this.debugPanel.onRestart(() => {
       void this.restart()
+    })
+
+    this.bindMovementControls()
+  }
+
+  private bindMovementControls(): void {
+    this.elements.movementButtons.forEach((button) => {
+      const direction = button.dataset.movementDirection as MovementDirection | undefined
+      if (!isMovementDirection(direction)) {
+        return
+      }
+
+      const activePointers = new Set<number>()
+      const releasePointer = (event: PointerEvent): void => {
+        activePointers.delete(event.pointerId)
+        if (activePointers.size === 0) {
+          this.input.setVirtualDirection(direction, false)
+        }
+      }
+
+      button.addEventListener('pointerdown', (event) => {
+        activePointers.add(event.pointerId)
+        button.setPointerCapture(event.pointerId)
+        this.input.setVirtualDirection(direction, true)
+        event.preventDefault()
+      })
+
+      button.addEventListener('pointerup', releasePointer)
+      button.addEventListener('pointercancel', releasePointer)
+      button.addEventListener('lostpointercapture', releasePointer)
+      button.addEventListener('contextmenu', (event) => event.preventDefault())
     })
   }
 
@@ -356,4 +387,8 @@ export class GameClientApp {
     this.elements.disconnectButton.disabled = !connected
     this.debugPanel.setRestartEnabled(connected && this.localPlayerId !== null)
   }
+}
+
+function isMovementDirection(direction: string | undefined): direction is MovementDirection {
+  return direction === 'up' || direction === 'down' || direction === 'left' || direction === 'right'
 }
