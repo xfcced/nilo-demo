@@ -4,15 +4,32 @@ import type { BoxSnapshot, PlayerSnapshot, ServerMessage } from '../net/protocol
 import type { RenderBox, RenderPlayer, RenderWorldState } from '../renderState'
 
 const SERVER_TICK_MS = 1000 / gameConfig.simulation.tickRate
+const MAX_SAMPLES_PER_ENTITY = Math.max(2, Math.ceil(gameConfig.interpolation.delayTicks) + 1)
 
 type StateMessage = Extract<ServerMessage, { type: 'state' }>
 
-type PlayerSample = PlayerSnapshot & {
+export type PlayerSample = PlayerSnapshot & {
   serverTick: number
 }
 
-type BoxSample = BoxSnapshot & {
+export type BoxSample = BoxSnapshot & {
   serverTick: number
+  synthetic: boolean
+}
+
+export type InterpolationDebugPlayerSample = PlayerSample & {
+  sampleIndex: number
+  sampleCount: number
+}
+
+export type InterpolationDebugBoxSample = BoxSample & {
+  sampleIndex: number
+  sampleCount: number
+}
+
+export type InterpolationDebugState = {
+  players: InterpolationDebugPlayerSample[]
+  boxes: InterpolationDebugBoxSample[]
 }
 
 export class SnapshotInterpolator {
@@ -34,7 +51,7 @@ export class SnapshotInterpolator {
     }
 
     for (const box of snapshot.boxes) {
-      this.pushBoxSample(box.boxId, { ...box, serverTick: snapshot.serverTick })
+      this.pushBoxSample(box.boxId, { ...box, serverTick: snapshot.serverTick, synthetic: false })
     }
 
     return true
@@ -91,6 +108,30 @@ export class SnapshotInterpolator {
     return { players, boxes }
   }
 
+  debugSamples(localPlayerId: number | null): InterpolationDebugState {
+    const players: InterpolationDebugPlayerSample[] = []
+    const boxes: InterpolationDebugBoxSample[] = []
+
+    for (const [playerId, samples] of this.playerSamples) {
+      if (playerId === localPlayerId) {
+        continue
+      }
+
+      samples.forEach((sample, sampleIndex) => {
+        players.push({ ...sample, sampleIndex, sampleCount: samples.length })
+      })
+    }
+
+    for (const samples of this.boxSamples.values()) {
+      const authoritativeSamples = samples.filter((sample) => !sample.synthetic)
+      authoritativeSamples.forEach((sample, sampleIndex) => {
+        boxes.push({ ...sample, sampleIndex, sampleCount: authoritativeSamples.length })
+      })
+    }
+
+    return { players, boxes }
+  }
+
   reset(): void {
     this.playerSamples.clear()
     this.boxSamples.clear()
@@ -125,15 +166,15 @@ function appendBoxHoldSamples(samples: BoxSample[], incomingTick: number): void 
     return
   }
 
-  const firstHoldTick = Math.max(latest.serverTick + 1, incomingTick - gameConfig.interpolation.boxHoldSampleIntervalTicks)
+  const firstHoldTick = Math.max(latest.serverTick + 1, incomingTick - Math.ceil(gameConfig.interpolation.delayTicks))
   for (let serverTick = firstHoldTick; serverTick < incomingTick; serverTick += 1) {
-    samples.push({ ...latest, serverTick })
+    samples.push({ ...latest, serverTick, synthetic: true })
   }
 }
 
 function trimSamples<T>(samples: T[]): void {
-  if (samples.length > gameConfig.interpolation.maxSamplesPerEntity) {
-    samples.splice(0, samples.length - gameConfig.interpolation.maxSamplesPerEntity)
+  if (samples.length > MAX_SAMPLES_PER_ENTITY) {
+    samples.splice(0, samples.length - MAX_SAMPLES_PER_ENTITY)
   }
 }
 

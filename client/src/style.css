@@ -95,6 +95,29 @@ input {
   gap: 3px;
 }
 
+.debug-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.debug-options label {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.debug-options input {
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  padding: 0;
+}
+
 button {
   min-width: 56px;
   padding: 2px 5px;

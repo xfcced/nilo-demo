@@ -8,7 +8,7 @@ import { GameConnection } from './net/GameConnection'
 import type { ServerMessage } from './net/protocol'
 import { LocalPlayerPredictor } from './sync/LocalPlayerPredictor'
 import { SnapshotInterpolator } from './sync/SnapshotInterpolator'
-import { DebugPanel } from './ui/DebugPanel'
+import { DebugPanel, type DebugOptions } from './ui/DebugPanel'
 
 const PING_SEND_MS = 1000
 const FPS_SAMPLE_MS = 500
@@ -21,6 +21,7 @@ export class GameClientApp {
   private serverConnection = new GameConnection()
   private interpolator = new SnapshotInterpolator()
   private localPlayerPredictor = new LocalPlayerPredictor()
+  private debugOptions: DebugOptions = this.debugPanel.debugOptions()
   private gameLoop: GameLoop
 
   private localPredictionTick: number | null = null
@@ -138,6 +139,16 @@ export class GameClientApp {
       void this.restart()
     })
 
+    this.debugPanel.onDebugOptionsChanged((options) => {
+      this.debugOptions = options
+      if (!options.predictionDebug) {
+        this.arena.clearLocalPredictionDebug()
+      }
+      if (!options.interpolationDebug) {
+        this.arena.clearInterpolationDebug()
+      }
+    })
+
     this.bindMovementControls()
   }
 
@@ -245,8 +256,10 @@ export class GameClientApp {
     this.updateNetworkStats(renderDeltaMs)
     const renderDeltaSeconds = renderDeltaMs / 1000
     const localPlayer = this.localPlayerId === null ? null : this.localPlayerPredictor.renderPlayer(this.localPlayerId, fixedStepAlpha, renderDeltaSeconds)
-    this.arena.setLocalPredictionDebug(localPlayer ? this.localPlayerPredictor.debugState() : null)
-    this.arena.applyRenderState(this.interpolator.sample(performance.now(), this.localPlayerId, localPlayer))
+    const renderState = this.interpolator.sample(performance.now(), this.localPlayerId, localPlayer)
+    this.arena.setLocalPredictionDebug(this.debugOptions.predictionDebug && localPlayer ? this.localPlayerPredictor.debugState() : null)
+    this.arena.setInterpolationDebug(this.debugOptions.interpolationDebug ? this.interpolator.debugSamples(this.localPlayerId) : null)
+    this.arena.applyRenderState(renderState)
     this.arena.render()
   }
 
@@ -373,6 +386,7 @@ export class GameClientApp {
     this.arena.clearPlayers()
     this.arena.clearBoxes()
     this.arena.clearLocalPredictionDebug()
+    this.arena.clearInterpolationDebug()
     this.interpolator.reset()
     this.localPlayerPredictor.reset()
     this.debugPanel.setServerTick(null)

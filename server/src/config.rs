@@ -79,9 +79,7 @@ pub struct BoxesConfig {
 #[serde(rename_all = "camelCase")]
 pub struct InterpolationConfig {
     pub delay_ticks: f32,
-    pub max_samples_per_entity: usize,
     pub entity_expire_ticks: f32,
-    pub box_hold_sample_interval_ticks: u64,
 }
 
 #[derive(Clone, Debug, Deserialize)]

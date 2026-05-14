@@ -24,7 +24,7 @@
   "player": {
     "radius": 0.42,
     "centerY": 0.34,
-    "maxSpeed": 10,
+    "maxSpeed": 7,
     "acceleration": 92,
     "deceleration": 56
   },
@@ -38,9 +38,7 @@
   },
   "interpolation": {
     "delayTicks": 3,
-    "maxSamplesPerEntity": 20,
-    "entityExpireTicks": 8,
-    "boxHoldSampleIntervalTicks": 4
+    "entityExpireTicks": 8
   },
   "protocol": {
     "positionScale": 100,

@@ -18,6 +18,11 @@ export type PredictionMetrics = {
   correctionCount: number
 }
 
+export type DebugOptions = {
+  predictionDebug: boolean
+  interpolationDebug: boolean
+}
+
 const STATE_ARRIVAL_WINDOW_MS = 4000
 const LOSS_SAMPLE_COUNT = 120
 const LOSS_CHART_MIN_MAX = 3
@@ -31,6 +36,8 @@ type DebugPanelElements = {
   panel: HTMLElement
   toggleButton: HTMLButtonElement
   restartButton: HTMLButtonElement
+  predictionDebugToggle: HTMLInputElement
+  interpolationDebugToggle: HTMLInputElement
   connectionValue: HTMLElement
   playerIdValue: HTMLElement
   rttValue: HTMLElement
@@ -67,6 +74,8 @@ export class DebugPanel {
       panel: getElement('debugPanel'),
       toggleButton: getElement('debugToggle'),
       restartButton: getElement('restartButton'),
+      predictionDebugToggle: getElement('predictionDebugToggle'),
+      interpolationDebugToggle: getElement('interpolationDebugToggle'),
       connectionValue: getElement('connectionValue'),
       playerIdValue: getElement('playerIdValue'),
       rttValue: getElement('rttValue'),
@@ -99,6 +108,19 @@ export class DebugPanel {
 
   onRestart(handler: () => void): void {
     this.elements.restartButton.addEventListener('click', handler)
+  }
+
+  onDebugOptionsChanged(handler: (options: DebugOptions) => void): void {
+    const notify = (): void => handler(this.debugOptions())
+    this.elements.predictionDebugToggle.addEventListener('change', notify)
+    this.elements.interpolationDebugToggle.addEventListener('change', notify)
+  }
+
+  debugOptions(): DebugOptions {
+    return {
+      predictionDebug: this.elements.predictionDebugToggle.checked,
+      interpolationDebug: this.elements.interpolationDebugToggle.checked,
+    }
   }
 
   setRestartEnabled(enabled: boolean): void {

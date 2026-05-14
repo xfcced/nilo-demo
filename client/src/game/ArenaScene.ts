@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { gameConfig } from './config'
+import type { InterpolationDebugState } from './sync/SnapshotInterpolator'
 import type { LocalPredictionDebugState } from './sync/LocalPlayerPredictor'
 import type { RenderBox, RenderPlayer, RenderWorldState } from './renderState'
 
@@ -13,6 +14,7 @@ export class ArenaScene {
   private boxes = new Map<number, THREE.Mesh>()
   private predictionDebugMarkers = new Map<DebugMarkerName, THREE.Mesh>()
   private predictionDebugLine: THREE.Line | null = null
+  private interpolationDebugMeshes: THREE.Mesh[] = []
   private localPlayerId: number | null = null
 
   constructor(canvas: HTMLCanvasElement) {
@@ -41,6 +43,7 @@ export class ArenaScene {
     this.clearPlayers()
     this.clearBoxes()
     this.clearLocalPredictionDebug()
+    this.clearInterpolationDebug()
     this.renderer.dispose()
   }
 
@@ -90,6 +93,36 @@ export class ArenaScene {
     }
 
     this.setPredictionDebugLine(linePoints)
+  }
+
+  setInterpolationDebug(state: InterpolationDebugState | null): void {
+    if (!state) {
+      this.clearInterpolationDebug()
+      return
+    }
+
+    let meshIndex = 0
+    for (const sample of state.players) {
+      const mesh = this.getInterpolationDebugMesh(meshIndex, 'player')
+      mesh.position.set(sample.x, sample.y, sample.z)
+      mesh.quaternion.identity()
+      this.setInterpolationDebugMaterial(mesh, 0x7a2fdc, sample.sampleIndex, sample.sampleCount)
+      mesh.visible = true
+      meshIndex += 1
+    }
+
+    for (const sample of state.boxes) {
+      const mesh = this.getInterpolationDebugMesh(meshIndex, 'box')
+      mesh.position.set(sample.x, sample.y, sample.z)
+      mesh.quaternion.set(sample.qx, sample.qy, sample.qz, sample.qw)
+      this.setInterpolationDebugMaterial(mesh, 0x111111, sample.sampleIndex, sample.sampleCount)
+      mesh.visible = true
+      meshIndex += 1
+    }
+
+    for (let index = meshIndex; index < this.interpolationDebugMeshes.length; index += 1) {
+      this.interpolationDebugMeshes[index].visible = false
+    }
   }
 
   private setPlayers(players: RenderPlayer[]): void {
@@ -180,6 +213,14 @@ export class ArenaScene {
     }
   }
 
+  clearInterpolationDebug(): void {
+    for (const mesh of this.interpolationDebugMeshes) {
+      this.scene.remove(mesh)
+      this.disposeMesh(mesh)
+    }
+    this.interpolationDebugMeshes = []
+  }
+
   private buildArena(): void {
     const ambientLight = new THREE.HemisphereLight(0xffffff, 0x7c8790, 2.8)
     this.scene.add(ambientLight)
@@ -244,6 +285,45 @@ export class ArenaScene {
         depthTest: false,
       }),
     )
+  }
+
+  private getInterpolationDebugMesh(index: number, kind: 'player' | 'box'): THREE.Mesh {
+    const existing = this.interpolationDebugMeshes[index]
+    if (existing?.userData.kind === kind) {
+      return existing
+    }
+
+    if (existing) {
+      this.scene.remove(existing)
+      this.disposeMesh(existing)
+    }
+
+    const mesh =
+      kind === 'player'
+        ? new THREE.Mesh(
+            new THREE.SphereGeometry(gameConfig.player.radius * 1.06, 12, 8),
+            new THREE.MeshBasicMaterial({ wireframe: true, transparent: true, depthTest: false, depthWrite: false }),
+          )
+        : new THREE.Mesh(
+            new THREE.BoxGeometry(gameConfig.boxes.halfExtent * 2.04, gameConfig.boxes.halfExtent * 2.04, gameConfig.boxes.halfExtent * 2.04),
+            new THREE.MeshBasicMaterial({ wireframe: true, transparent: true, depthTest: false, depthWrite: false }),
+          )
+
+    mesh.userData.kind = kind
+    this.interpolationDebugMeshes[index] = mesh
+    this.scene.add(mesh)
+    return mesh
+  }
+
+  private setInterpolationDebugMaterial(mesh: THREE.Mesh, color: number, sampleIndex: number, sampleCount: number): void {
+    const material = mesh.material
+    if (!(material instanceof THREE.MeshBasicMaterial)) {
+      return
+    }
+
+    const ageAlpha = sampleCount <= 1 ? 1 : sampleIndex / (sampleCount - 1)
+    material.color.setHex(color)
+    material.opacity = 0.12 + ageAlpha * 0.58
   }
 
   private removePredictionDebugMarker(markerName: DebugMarkerName): void {
