@@ -139,6 +139,7 @@ export class ArenaScene {
       }
 
       player.position.set(playerState.x, playerState.y, playerState.z)
+      player.quaternion.set(playerState.qx, playerState.qy, playerState.qz, playerState.qw)
       this.setPlayerMaterial(player, playerState.isLocal)
     }
 
@@ -260,7 +261,14 @@ export class ArenaScene {
   }
 
   private createPlayer(isLocal: boolean): THREE.Mesh {
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(gameConfig.player.radius, 32, 24), new THREE.MeshStandardMaterial({ color: isLocal ? 0x2f6fda : 0xb55f4d, roughness: 0.55 }))
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(gameConfig.player.radius, 48, 32),
+      new THREE.MeshStandardMaterial({
+        color: isLocal ? 0x2f6fda : 0xb55f4d,
+        map: createPlayerTexture(),
+        roughness: 0.55,
+      }),
+    )
     return mesh
   }
 
@@ -388,6 +396,8 @@ export class ArenaScene {
     if (Array.isArray(mesh.material)) {
       mesh.material.forEach((material) => material.dispose())
     } else {
+      const map = mesh.material instanceof THREE.MeshStandardMaterial ? mesh.material.map : null
+      map?.dispose()
       mesh.material.dispose()
     }
   }
@@ -399,4 +409,51 @@ export class ArenaScene {
     this.camera.aspect = width / height
     this.camera.updateProjectionMatrix()
   }
+}
+
+function createPlayerTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 128
+  const context = canvas.getContext('2d')
+  if (!context) {
+    return new THREE.CanvasTexture(canvas)
+  }
+
+  context.fillStyle = '#f7fafc'
+  context.fillRect(0, 0, canvas.width, canvas.height)
+
+  context.strokeStyle = '#27323a'
+  context.lineWidth = 8
+  for (let x = -64; x < canvas.width + 64; x += 64) {
+    context.beginPath()
+    context.moveTo(x, 0)
+    context.bezierCurveTo(x + 28, 32, x - 28, 96, x + 16, canvas.height)
+    context.stroke()
+  }
+
+  context.strokeStyle = '#8da0ad'
+  context.lineWidth = 3
+  for (let y = 24; y < canvas.height; y += 40) {
+    context.beginPath()
+    context.moveTo(0, y)
+    context.lineTo(canvas.width, y + 12)
+    context.stroke()
+  }
+
+  context.fillStyle = '#111820'
+  for (let x = 24; x < canvas.width; x += 56) {
+    for (let y = 18; y < canvas.height; y += 44) {
+      context.beginPath()
+      context.arc(x, y, 5, 0, Math.PI * 2)
+      context.fill()
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  texture.anisotropy = 4
+  return texture
 }

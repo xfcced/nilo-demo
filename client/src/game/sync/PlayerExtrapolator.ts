@@ -1,9 +1,11 @@
+import * as THREE from 'three'
 import { gameConfig } from '../config'
 import type { PlayerSnapshot, ServerMessage } from '../net/protocol'
 import type { RenderPlayer } from '../renderState'
 
 const SERVER_TICK_MS = 1000 / gameConfig.simulation.tickRate
 const MAX_EXTRAPOLATION_SECONDS = 0.15
+const MIN_ANGULAR_SPEED = 0.0001
 
 type StateMessage = Extract<ServerMessage, { type: 'state' }>
 
@@ -55,12 +57,17 @@ export class PlayerExtrapolator {
 
       const elapsedTicks = this.latestServerTick + elapsedSinceLatestSnapshotTicks - player.serverTick
       const deltaSeconds = Math.min(MAX_EXTRAPOLATION_SECONDS, Math.max(0, elapsedTicks / gameConfig.simulation.tickRate))
+      const rotation = extrapolateRotation(player, deltaSeconds)
       players.push({
         playerId: player.playerId,
         isLocal: false,
         x: player.x + player.vx * deltaSeconds,
         y: player.y + player.vy * deltaSeconds,
         z: player.z + player.vz * deltaSeconds,
+        qx: rotation.x,
+        qy: rotation.y,
+        qz: rotation.z,
+        qw: rotation.w,
       })
     }
 
@@ -72,4 +79,17 @@ export class PlayerExtrapolator {
     this.latestServerTick = 0
     this.latestSnapshotReceivedAtMs = 0
   }
+}
+
+function extrapolateRotation(player: PlayerState, deltaSeconds: number): THREE.Quaternion {
+  const rotation = new THREE.Quaternion(player.qx, player.qy, player.qz, player.qw).normalize()
+  const angularSpeed = Math.hypot(player.wx, player.wy, player.wz)
+
+  if (angularSpeed < MIN_ANGULAR_SPEED || deltaSeconds <= 0) {
+    return rotation
+  }
+
+  const axis = new THREE.Vector3(player.wx / angularSpeed, player.wy / angularSpeed, player.wz / angularSpeed)
+  const deltaRotation = new THREE.Quaternion().setFromAxisAngle(axis, angularSpeed * deltaSeconds)
+  return rotation.premultiply(deltaRotation).normalize()
 }

@@ -8,7 +8,7 @@ const TYPE_INPUT: u8 = 1;
 const TYPE_STATE: u8 = 2;
 const INPUT_BYTES: usize = 6;
 const STATE_HEADER_BYTES: usize = 11;
-const PLAYER_BYTES: usize = 13;
+const PLAYER_BYTES: usize = 26;
 const BOX_BYTES: usize = 26;
 const SMALLEST_THREE_RANGE: f32 = std::f32::consts::FRAC_1_SQRT_2;
 static POSITION_CLAMP_LOGGED: AtomicBool = AtomicBool::new(false);
@@ -84,9 +84,17 @@ pub fn encode_state(state: BinaryState<'_>) -> Result<Vec<u8>> {
         write_position(&mut payload, player.x, state.position_scale);
         write_position(&mut payload, player.y, state.position_scale);
         write_position(&mut payload, player.z, state.position_scale);
+        write_smallest_three_quaternion(
+            &mut payload,
+            [player.qx, player.qy, player.qz, player.qw],
+            state.quaternion_scale,
+        );
         write_position(&mut payload, player.vx, state.position_scale);
         write_position(&mut payload, player.vy, state.position_scale);
         write_position(&mut payload, player.vz, state.position_scale);
+        write_position(&mut payload, player.wx, state.position_scale);
+        write_position(&mut payload, player.wy, state.position_scale);
+        write_position(&mut payload, player.wz, state.position_scale);
     }
 
     for box_snapshot in state.boxes {
@@ -211,9 +219,16 @@ mod tests {
             x: 1.234,
             y: 0.34,
             z: -3.2,
+            qx: 0.0,
+            qy: 0.5,
+            qz: -0.5,
+            qw: 1.0,
             vx: 4.5,
             vy: 0.0,
             vz: -2.25,
+            wx: 0.75,
+            wy: -1.25,
+            wz: 1.5,
         }];
         let boxes = vec![BoxSnapshot {
             box_id: 9,
@@ -247,17 +262,29 @@ mod tests {
         assert_eq!(u32::from_be_bytes(encoded[1..5].try_into().unwrap()), 100);
         assert_eq!(u32::from_be_bytes(encoded[5..9].try_into().unwrap()), 42);
         assert_eq!(i16::from_be_bytes(encoded[12..14].try_into().unwrap()), 123);
-        assert_eq!(i16::from_be_bytes(encoded[18..20].try_into().unwrap()), 450);
-        assert_eq!(encoded[24], 9);
-        assert_eq!(encoded[31], 3);
+        assert_eq!(encoded[18], 3);
         assert_eq!(
-            i16::from_be_bytes(encoded[36..38].try_into().unwrap()),
+            i16::from_be_bytes(encoded[23..25].try_into().unwrap()),
             -23170
         );
-        assert_eq!(i16::from_be_bytes(encoded[38..40].try_into().unwrap()), 25);
-        assert_eq!(i16::from_be_bytes(encoded[42..44].try_into().unwrap()), -50);
-        assert_eq!(i16::from_be_bytes(encoded[44..46].try_into().unwrap()), 75);
-        assert_eq!(i16::from_be_bytes(encoded[46..48].try_into().unwrap()), -125);
-        assert_eq!(i16::from_be_bytes(encoded[48..50].try_into().unwrap()), 150);
+        assert_eq!(i16::from_be_bytes(encoded[25..27].try_into().unwrap()), 450);
+        assert_eq!(
+            i16::from_be_bytes(encoded[33..35].try_into().unwrap()),
+            -125
+        );
+        assert_eq!(encoded[37], 9);
+        assert_eq!(encoded[44], 3);
+        assert_eq!(
+            i16::from_be_bytes(encoded[49..51].try_into().unwrap()),
+            -23170
+        );
+        assert_eq!(i16::from_be_bytes(encoded[51..53].try_into().unwrap()), 25);
+        assert_eq!(i16::from_be_bytes(encoded[55..57].try_into().unwrap()), -50);
+        assert_eq!(i16::from_be_bytes(encoded[57..59].try_into().unwrap()), 75);
+        assert_eq!(
+            i16::from_be_bytes(encoded[59..61].try_into().unwrap()),
+            -125
+        );
+        assert_eq!(i16::from_be_bytes(encoded[61..63].try_into().unwrap()), 150);
     }
 }

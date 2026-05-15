@@ -62,8 +62,8 @@ impl World {
         let z = -3.2 + (spawn_index / 5.0).floor() * 1.2;
         let body = RigidBodyBuilder::dynamic()
             .translation(Vector::new(x, self.config.player.center_y, z))
-            .lock_rotations()
-            .linear_damping(2.5)
+            .linear_damping(self.config.player.linear_damping)
+            .angular_damping(self.config.player.angular_damping)
             .build();
         let body_handle = self.bodies.insert(body);
         let collider = ColliderBuilder::ball(self.config.player.radius)
@@ -120,23 +120,31 @@ impl World {
             dz /= length;
         }
 
-        let target_x = dx * self.config.player.max_speed;
-        let target_z = dz * self.config.player.max_speed;
-        let acceleration = if length > 0.0 {
-            self.config.player.acceleration
-        } else {
-            self.config.player.deceleration
-        };
-        let max_delta = acceleration * delta_seconds;
+        let has_input = length > 0.0;
+        if has_input {
+            let desired_direction = Vector::new(dx, 0.0, dz);
+            let torque = Vector::Y.cross(desired_direction) * self.config.player.move_torque;
+            body.add_torque(torque, true);
+        }
+
         let velocity = body.linvel();
-        body.set_linvel(
-            Vector::new(
-                move_toward(velocity.x, target_x, max_delta),
-                velocity.y,
-                move_toward(velocity.z, target_z, max_delta),
-            ),
-            true,
-        );
+        let angular_velocity = body.angvel();
+        let horizontal_velocity = Vector::new(velocity.x, 0.0, velocity.z);
+        let horizontal_angular_velocity = Vector::new(angular_velocity.x, 0.0, angular_velocity.z);
+        let rolling_velocity =
+            horizontal_angular_velocity.cross(Vector::Y) * self.config.player.radius;
+        let slip_speed = (rolling_velocity - horizontal_velocity).length();
+
+        if !has_input || slip_speed > self.config.player.slip_brake_speed {
+            let brake_torque = angular_brake_torque(
+                horizontal_angular_velocity,
+                self.config.player.spin_brake_torque,
+                body.mass(),
+                self.config.player.radius,
+                delta_seconds,
+            );
+            body.add_torque(brake_torque, true);
+        }
     }
 
     pub fn step(&mut self, delta_seconds: f32) {
@@ -163,15 +171,24 @@ impl World {
             .filter_map(|(&player_id, &body_handle)| {
                 let body = self.bodies.get(body_handle)?;
                 let position = body.translation();
+                let rotation = body.rotation();
                 let velocity = body.linvel();
+                let angular_velocity = body.angvel();
                 Some(PlayerSnapshot {
                     player_id,
                     x: position.x,
                     y: position.y,
                     z: position.z,
+                    qx: rotation.x,
+                    qy: rotation.y,
+                    qz: rotation.z,
+                    qw: rotation.w,
                     vx: velocity.x,
                     vy: velocity.y,
                     vz: velocity.z,
+                    wx: angular_velocity.x,
+                    wy: angular_velocity.y,
+                    wz: angular_velocity.z,
                 })
             })
             .collect()
@@ -300,13 +317,21 @@ impl World {
     }
 }
 
-fn move_toward(current: f32, target: f32, max_delta: f32) -> f32 {
-    let delta = target - current;
-    if delta.abs() <= max_delta {
-        target
-    } else {
-        current + delta.signum() * max_delta
+fn angular_brake_torque(
+    horizontal_angular_velocity: Vector,
+    max_torque: f32,
+    mass: f32,
+    radius: f32,
+    delta_seconds: f32,
+) -> Vector {
+    let angular_speed = horizontal_angular_velocity.length();
+    if angular_speed <= 0.001 || delta_seconds <= 0.0 || mass <= 0.0 || radius <= 0.0 {
+        return Vector::ZERO;
     }
+
+    let inertia = 0.4 * mass * radius * radius;
+    let torque_to_stop = (angular_speed * inertia) / delta_seconds;
+    -horizontal_angular_velocity.normalize() * max_torque.min(torque_to_stop)
 }
 
 #[cfg(test)]
@@ -324,7 +349,7 @@ mod tests {
         world.spawn_player(1);
         let before = world.player_snapshots()[0].x;
 
-        for _ in 0..20 {
+        for _ in 0..120 {
             world.apply_player_input(
                 1,
                 PlayerInput {
@@ -337,11 +362,11 @@ mod tests {
         }
 
         let after = world.player_snapshots()[0].x;
-        assert!(after > before + 0.2);
+        assert!(after > before + 0.8);
     }
 
     #[test]
-    fn player_input_accelerates_toward_target_speed() {
+    fn player_input_applies_torque_to_player_body() {
         let mut world = World::new(test_config());
         world.spawn_player(1);
         world.apply_player_input(
@@ -352,6 +377,7 @@ mod tests {
             },
             1.0 / 60.0,
         );
+        world.step(1.0 / 60.0);
         let player_handle = world.players[&1];
         let player = world
             .bodies
@@ -359,16 +385,16 @@ mod tests {
             .expect("missing player body");
 
         assert!(player.linvel().x > 0.0);
-        assert!(player.linvel().x < world.config.player.max_speed);
         assert!(player.linvel().z.abs() < 0.001);
+        assert!(player.angvel().z < -0.001);
     }
 
     #[test]
-    fn player_without_input_decelerates_toward_zero() {
+    fn player_without_input_naturally_slows_down() {
         let mut world = World::new(test_config());
         world.spawn_player(1);
 
-        for _ in 0..20 {
+        for _ in 0..120 {
             world.apply_player_input(
                 1,
                 PlayerInput {
@@ -386,18 +412,45 @@ mod tests {
             .get(player_handle)
             .expect("missing player body")
             .linvel()
-            .x;
+            .length();
 
-        world.apply_player_input(1, PlayerInput::default(), 1.0 / 60.0);
+        for _ in 0..120 {
+            world.apply_player_input(1, PlayerInput::default(), 1.0 / 60.0);
+            world.step(1.0 / 60.0);
+        }
         let decelerated_speed = world
             .bodies
             .get(player_handle)
             .expect("missing player body")
             .linvel()
-            .x;
+            .length();
 
         assert!(decelerated_speed >= 0.0);
         assert!(decelerated_speed < moving_speed);
+    }
+
+    #[test]
+    fn player_ball_rolls_when_moving() {
+        let mut world = World::new(test_config());
+        world.spawn_player(1);
+
+        for _ in 0..20 {
+            world.apply_player_input(
+                1,
+                PlayerInput {
+                    right: true,
+                    ..PlayerInput::default()
+                },
+                1.0 / 60.0,
+            );
+            world.step(1.0 / 60.0);
+        }
+
+        let snapshot = world.player_snapshots()[0].clone();
+        assert!(snapshot.wx.abs() > 0.001 || snapshot.wz.abs() > 0.001);
+        assert!(
+            snapshot.qx.abs() > 0.001 || snapshot.qy.abs() > 0.001 || snapshot.qz.abs() > 0.001
+        );
     }
 
     #[test]

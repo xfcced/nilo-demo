@@ -18,9 +18,16 @@ export type PlayerSnapshot = {
   x: number
   y: number
   z: number
+  qx: number
+  qy: number
+  qz: number
+  qw: number
   vx: number
   vy: number
   vz: number
+  wx: number
+  wy: number
+  wz: number
 }
 
 export type BoxSnapshot = {
@@ -44,7 +51,7 @@ const BINARY_TYPE_INPUT = 1
 const BINARY_TYPE_STATE = 2
 const INPUT_BYTES = 6
 const STATE_HEADER_BYTES = 11
-const PLAYER_BYTES = 13
+const PLAYER_BYTES = 26
 const BOX_BYTES = 26
 const SMALLEST_THREE_RANGE = Math.SQRT1_2
 
@@ -84,14 +91,19 @@ export function decodeStateDatagram(payload: Uint8Array): ServerMessage {
   let offset = STATE_HEADER_BYTES
   const players: PlayerSnapshot[] = []
   for (let index = 0; index < playerCount; index += 1) {
+    const rotation = readSmallestThreeQuaternion(view, offset + 7)
     players.push({
       playerId: view.getUint8(offset),
       x: readPosition(view, offset + 1),
       y: readPosition(view, offset + 3),
       z: readPosition(view, offset + 5),
-      vx: readPosition(view, offset + 7),
-      vy: readPosition(view, offset + 9),
-      vz: readPosition(view, offset + 11),
+      ...rotation,
+      vx: readPosition(view, offset + 14),
+      vy: readPosition(view, offset + 16),
+      vz: readPosition(view, offset + 18),
+      wx: readPosition(view, offset + 20),
+      wy: readPosition(view, offset + 22),
+      wz: readPosition(view, offset + 24),
     })
     offset += PLAYER_BYTES
   }
@@ -178,9 +190,16 @@ function isPlayerSnapshot(value: unknown): value is PlayerSnapshot {
     typeof player.x === 'number' &&
     typeof player.y === 'number' &&
     typeof player.z === 'number' &&
+    typeof player.qx === 'number' &&
+    typeof player.qy === 'number' &&
+    typeof player.qz === 'number' &&
+    typeof player.qw === 'number' &&
     typeof player.vx === 'number' &&
     typeof player.vy === 'number' &&
-    typeof player.vz === 'number'
+    typeof player.vz === 'number' &&
+    typeof player.wx === 'number' &&
+    typeof player.wy === 'number' &&
+    typeof player.wz === 'number'
   )
 }
 

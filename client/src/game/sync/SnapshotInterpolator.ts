@@ -78,6 +78,10 @@ export class SnapshotInterpolator {
           x: localPlayer.x,
           y: localPlayer.y,
           z: localPlayer.z,
+          qx: localPlayer.qx,
+          qy: localPlayer.qy,
+          qz: localPlayer.qz,
+          qw: localPlayer.qw,
         })
       }
     }
@@ -190,12 +194,20 @@ function samplePlayer(samples: PlayerSample[], renderTick: number): RenderPlayer
   }
 
   const { before, after, sampleAlpha } = pair
+  const from = new THREE.Quaternion(before.qx, before.qy, before.qz, before.qw)
+  const to = new THREE.Quaternion(after.qx, after.qy, after.qz, after.qw)
+  const rotation = from.slerp(to, sampleAlpha)
+
   return {
     playerId: before.playerId,
     isLocal: false,
     x: lerp(before.x, after.x, sampleAlpha),
     y: lerp(before.y, after.y, sampleAlpha),
     z: lerp(before.z, after.z, sampleAlpha),
+    qx: rotation.x,
+    qy: rotation.y,
+    qz: rotation.z,
+    qw: rotation.w,
   }
 }
 

@@ -188,10 +188,13 @@ state datagram, 11-byte header + players + changed boxes:
   u8  playerCount
   u8  changedBoxCount
 
-player, 13 bytes:
+player, 26 bytes:
   u8  playerId
   i16 x, y, z
+  u8  largestQuatIndex
+  i16 qA, qB, qC
   i16 vx, vy, vz
+  i16 wx, wy, wz
 
 box, 26 bytes:
   u8  boxId
@@ -202,7 +205,7 @@ box, 26 bytes:
   i16 wx, wy, wz
 ```
 
-Positions, velocities, and angular velocities are quantized with `protocol.positionScale`; quaternion components are quantized with `protocol.quaternionScale`. Box rotations use smallest-three quaternion compression: the largest absolute component is omitted, the quaternion is sign-flipped if needed so the omitted component is positive, and the other three components are quantized into `i16`.
+Positions, velocities, and angular velocities are quantized with `protocol.positionScale`; quaternion components are quantized with `protocol.quaternionScale`. Player and box rotations use smallest-three quaternion compression: the largest absolute component is omitted, the quaternion is sign-flipped if needed so the omitted component is positive, and the other three components are quantized into `i16`.
 
 State datagrams always include all current players. `serverTick` is the authoritative simulation timeline used for reconciliation: the client resets to the authoritative state for that tick, drops local prediction history at or before that tick, then replays newer local prediction inputs. `lastReceivedInputSeq` is connection-local debug/ack data for the newest input packet the server accepted; it is not used as the replay boundary. The server ignores repeated or older `inputSeq` values for a connection and otherwise applies the latest accepted input on subsequent simulation ticks. New connections receive one full box baseline, then boxes are changed-only: if a box's quantized position, rotation, linear velocity, and angular velocity match the last server snapshot, it is omitted and the client keeps its previous box state.
 
