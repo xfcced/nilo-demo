@@ -9,7 +9,7 @@ const TYPE_STATE: u8 = 2;
 const INPUT_BYTES: usize = 6;
 const STATE_HEADER_BYTES: usize = 11;
 const PLAYER_BYTES: usize = 13;
-const BOX_BYTES: usize = 14;
+const BOX_BYTES: usize = 26;
 const SMALLEST_THREE_RANGE: f32 = std::f32::consts::FRAC_1_SQRT_2;
 static POSITION_CLAMP_LOGGED: AtomicBool = AtomicBool::new(false);
 static QUATERNION_CLAMP_LOGGED: AtomicBool = AtomicBool::new(false);
@@ -104,6 +104,12 @@ pub fn encode_state(state: BinaryState<'_>) -> Result<Vec<u8>> {
             ],
             state.quaternion_scale,
         );
+        write_position(&mut payload, box_snapshot.vx, state.position_scale);
+        write_position(&mut payload, box_snapshot.vy, state.position_scale);
+        write_position(&mut payload, box_snapshot.vz, state.position_scale);
+        write_position(&mut payload, box_snapshot.wx, state.position_scale);
+        write_position(&mut payload, box_snapshot.wy, state.position_scale);
+        write_position(&mut payload, box_snapshot.wz, state.position_scale);
     }
 
     Ok(payload)
@@ -218,6 +224,12 @@ mod tests {
             qy: 0.5,
             qz: -0.5,
             qw: 1.0,
+            vx: 0.25,
+            vy: 0.0,
+            vz: -0.5,
+            wx: 0.75,
+            wy: -1.25,
+            wz: 1.5,
         }];
 
         let encoded = encode_state(BinaryState {
@@ -242,5 +254,10 @@ mod tests {
             i16::from_be_bytes(encoded[36..38].try_into().unwrap()),
             -23170
         );
+        assert_eq!(i16::from_be_bytes(encoded[38..40].try_into().unwrap()), 25);
+        assert_eq!(i16::from_be_bytes(encoded[42..44].try_into().unwrap()), -50);
+        assert_eq!(i16::from_be_bytes(encoded[44..46].try_into().unwrap()), 75);
+        assert_eq!(i16::from_be_bytes(encoded[46..48].try_into().unwrap()), -125);
+        assert_eq!(i16::from_be_bytes(encoded[48..50].try_into().unwrap()), 150);
     }
 }

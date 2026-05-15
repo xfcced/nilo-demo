@@ -6,7 +6,9 @@ import { ArenaScene } from './ArenaScene'
 import { defaultWebTransportUrl, FIXED_STEP_MS, gameConfig } from './config'
 import { GameConnection } from './net/GameConnection'
 import type { ServerMessage } from './net/protocol'
+import { BoxExtrapolator } from './sync/BoxExtrapolator'
 import { LocalPlayerPredictor } from './sync/LocalPlayerPredictor'
+import { PlayerExtrapolator } from './sync/PlayerExtrapolator'
 import { SnapshotInterpolator } from './sync/SnapshotInterpolator'
 import { DebugPanel, type DebugOptions } from './ui/DebugPanel'
 
@@ -20,6 +22,8 @@ export class GameClientApp {
   private input = new KeyboardInput()
   private serverConnection = new GameConnection()
   private interpolator = new SnapshotInterpolator()
+  private playerExtrapolator = new PlayerExtrapolator()
+  private boxExtrapolator = new BoxExtrapolator()
   private localPlayerPredictor = new LocalPlayerPredictor()
   private debugOptions: DebugOptions = this.debugPanel.debugOptions()
   private gameLoop: GameLoop
@@ -103,6 +107,8 @@ export class GameClientApp {
         if (!this.interpolator.pushSnapshot(message, receivedAtMs)) {
           return
         }
+        this.playerExtrapolator.pushSnapshot(message, receivedAtMs)
+        this.boxExtrapolator.pushSnapshot(message, receivedAtMs)
 
         this.debugPanel.setServerTick(message.serverTick)
         this.debugPanel.recordStateReceived(receivedAtMs)
@@ -254,9 +260,14 @@ export class GameClientApp {
   private render(renderDeltaMs: number, fixedStepAlpha: number): void {
     this.updateFps(renderDeltaMs)
     this.updateNetworkStats(renderDeltaMs)
+    const nowMs = performance.now()
     const renderDeltaSeconds = renderDeltaMs / 1000
     const localPlayer = this.localPlayerId === null ? null : this.localPlayerPredictor.renderPlayer(this.localPlayerId, fixedStepAlpha, renderDeltaSeconds)
-    const renderState = this.interpolator.sample(performance.now(), this.localPlayerId, localPlayer)
+    this.interpolator.sample(nowMs, this.localPlayerId, localPlayer)
+    const renderState = {
+      players: this.playerExtrapolator.sample(nowMs, this.localPlayerId, localPlayer),
+      boxes: this.boxExtrapolator.sample(nowMs),
+    }
     this.arena.setLocalPredictionDebug(this.debugOptions.predictionDebug && localPlayer ? this.localPlayerPredictor.debugState() : null)
     this.arena.setInterpolationDebug(this.debugOptions.interpolationDebug ? this.interpolator.debugSamples(this.localPlayerId) : null)
     this.arena.applyRenderState(renderState)
@@ -388,6 +399,8 @@ export class GameClientApp {
     this.arena.clearLocalPredictionDebug()
     this.arena.clearInterpolationDebug()
     this.interpolator.reset()
+    this.playerExtrapolator.reset()
+    this.boxExtrapolator.reset()
     this.localPlayerPredictor.reset()
     this.debugPanel.setServerTick(null)
     this.debugPanel.setPredictionMetrics(null)

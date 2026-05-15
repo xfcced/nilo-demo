@@ -37,7 +37,7 @@
     "centerZ": 1.4
   },
   "interpolation": {
-    "delayTicks": 3,
+    "delayTicks": 2,
     "entityExpireTicks": 8
   },
   "protocol": {

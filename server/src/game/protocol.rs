@@ -61,4 +61,10 @@ pub struct BoxSnapshot {
     pub qy: f32,
     pub qz: f32,
     pub qw: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub vz: f32,
+    pub wx: f32,
+    pub wy: f32,
+    pub wz: f32,
 }

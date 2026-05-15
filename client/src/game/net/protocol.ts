@@ -32,6 +32,12 @@ export type BoxSnapshot = {
   qy: number
   qz: number
   qw: number
+  vx: number
+  vy: number
+  vz: number
+  wx: number
+  wy: number
+  wz: number
 }
 
 const BINARY_TYPE_INPUT = 1
@@ -39,7 +45,7 @@ const BINARY_TYPE_STATE = 2
 const INPUT_BYTES = 6
 const STATE_HEADER_BYTES = 11
 const PLAYER_BYTES = 13
-const BOX_BYTES = 14
+const BOX_BYTES = 26
 const SMALLEST_THREE_RANGE = Math.SQRT1_2
 
 export function encodeClientMessage(message: ClientMessage): string {
@@ -97,7 +103,19 @@ export function decodeStateDatagram(payload: Uint8Array): ServerMessage {
     const y = readPosition(view, offset + 3)
     const z = readPosition(view, offset + 5)
     const rotation = readSmallestThreeQuaternion(view, offset + 7)
-    boxes.push({ boxId, x, y, z, ...rotation })
+    boxes.push({
+      boxId,
+      x,
+      y,
+      z,
+      ...rotation,
+      vx: readPosition(view, offset + 14),
+      vy: readPosition(view, offset + 16),
+      vz: readPosition(view, offset + 18),
+      wx: readPosition(view, offset + 20),
+      wy: readPosition(view, offset + 22),
+      wz: readPosition(view, offset + 24),
+    })
     offset += BOX_BYTES
   }
 
@@ -180,7 +198,13 @@ function isBoxSnapshot(value: unknown): value is BoxSnapshot {
     typeof box.qx === 'number' &&
     typeof box.qy === 'number' &&
     typeof box.qz === 'number' &&
-    typeof box.qw === 'number'
+    typeof box.qw === 'number' &&
+    typeof box.vx === 'number' &&
+    typeof box.vy === 'number' &&
+    typeof box.vz === 'number' &&
+    typeof box.wx === 'number' &&
+    typeof box.wy === 'number' &&
+    typeof box.wz === 'number'
   )
 }
 

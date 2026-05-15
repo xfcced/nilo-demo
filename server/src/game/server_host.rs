@@ -317,6 +317,12 @@ impl StateDeltaTracker {
             || quantized_changed(previous.qy, current.qy, quaternion_scale)
             || quantized_changed(previous.qz, current.qz, quaternion_scale)
             || quantized_changed(previous.qw, current.qw, quaternion_scale)
+            || quantized_changed(previous.vx, current.vx, position_scale)
+            || quantized_changed(previous.vy, current.vy, position_scale)
+            || quantized_changed(previous.vz, current.vz, position_scale)
+            || quantized_changed(previous.wx, current.wx, position_scale)
+            || quantized_changed(previous.wy, current.wy, position_scale)
+            || quantized_changed(previous.wz, current.wz, position_scale)
     }
 }
 
@@ -343,6 +349,12 @@ mod tests {
             qy: 0.0,
             qz: 0.0,
             qw: 1.0,
+            vx: 0.0,
+            vy: 0.0,
+            vz: 0.0,
+            wx: 0.0,
+            wy: 0.0,
+            wz: 0.0,
         }
     }
 
@@ -379,6 +391,20 @@ mod tests {
         let new_connection =
             tracker.boxes_for_connection(ConnectionId(2), &all_boxes, &changed_boxes);
         assert_eq!(new_connection.len(), 2);
+    }
+
+    #[test]
+    fn delta_tracker_includes_box_velocity_changes() {
+        let mut tracker = StateDeltaTracker::new(test_config());
+        let mut boxes = vec![box_snapshot(1, 1.0)];
+
+        let changed = tracker.changed_boxes(&boxes);
+        assert_eq!(changed.len(), 1);
+
+        boxes[0].vx = 0.2;
+        let changed = tracker.changed_boxes(&boxes);
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].box_id, 1);
     }
 }
 

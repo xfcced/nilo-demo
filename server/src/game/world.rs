@@ -184,6 +184,8 @@ impl World {
                 let body = self.bodies.get(box_body.body)?;
                 let position = body.translation();
                 let rotation = body.rotation();
+                let velocity = body.linvel();
+                let angular_velocity = body.angvel();
                 Some(BoxSnapshot {
                     box_id: box_body.id,
                     x: position.x,
@@ -193,6 +195,12 @@ impl World {
                     qy: rotation.y,
                     qz: rotation.z,
                     qw: rotation.w,
+                    vx: velocity.x,
+                    vy: velocity.y,
+                    vz: velocity.z,
+                    wx: angular_velocity.x,
+                    wy: angular_velocity.y,
+                    wz: angular_velocity.z,
                 })
             })
             .collect()
