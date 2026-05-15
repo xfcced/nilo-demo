@@ -7,6 +7,14 @@ import type { RenderBox, RenderPlayer, RenderWorldState } from './renderState'
 
 type DebugMarkerName = keyof LocalPredictionDebugState
 
+const DEBUG_LINE_RENDER_ORDER = 0
+const DEBUG_MARKER_RENDER_ORDER: Record<DebugMarkerName, number> = {
+  authoritative: 1,
+  predictedPhysics: 2,
+  renderedVisual: 3,
+}
+const GAMEPLAY_RENDER_ORDER = 10
+
 export class ArenaScene {
   private renderer: THREE.WebGLRenderer
   private scene: THREE.Scene
@@ -57,6 +65,7 @@ export class ArenaScene {
   applyRenderState(state: RenderWorldState): void {
     this.setPlayers(state.players)
     this.setBoxes(state.boxes)
+    this.bringGameplayMeshesToFront()
   }
 
   setLocalPredictionDebug(state: LocalPredictionDebugState | null): void {
@@ -83,11 +92,12 @@ export class ArenaScene {
 
       let marker = this.predictionDebugMarkers.get(markerName)
       if (!marker) {
-        marker = this.createPredictionDebugMarker(markerColors[markerName])
+        marker = this.createPredictionDebugMarker(markerColors[markerName], DEBUG_MARKER_RENDER_ORDER[markerName])
         this.predictionDebugMarkers.set(markerName, marker)
         this.scene.add(marker)
       }
 
+      marker.renderOrder = DEBUG_MARKER_RENDER_ORDER[markerName]
       marker.position.set(position.x, position.y, position.z)
       linePoints.push(new THREE.Vector3(position.x, position.y, position.z))
     }
@@ -139,6 +149,7 @@ export class ArenaScene {
       }
 
       player.position.set(playerState.x, playerState.y, playerState.z)
+      player.renderOrder = GAMEPLAY_RENDER_ORDER
       this.setPlayerMaterial(player, playerState.isLocal)
     }
 
@@ -174,6 +185,7 @@ export class ArenaScene {
 
       box.position.set(boxState.x, boxState.y, boxState.z)
       box.quaternion.set(boxState.qx, boxState.qy, boxState.qz, boxState.qw)
+      box.renderOrder = GAMEPLAY_RENDER_ORDER
     }
 
     for (const [boxId, box] of this.boxes) {
@@ -290,12 +302,13 @@ export class ArenaScene {
         roughness: 0.55,
       }),
     )
+    mesh.renderOrder = GAMEPLAY_RENDER_ORDER
     return mesh
   }
 
   private createBox(boxId: number): THREE.Mesh {
     const colors = [0xb55f4d, 0xd8a640, 0x4a8b74]
-    return new THREE.Mesh(
+    const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(gameConfig.boxes.halfExtent * 2, gameConfig.boxes.halfExtent * 2, gameConfig.boxes.halfExtent * 2),
       new THREE.MeshStandardMaterial({
         color: colors[(boxId - 1) % colors.length],
@@ -303,17 +316,27 @@ export class ArenaScene {
         metalness: 0.02,
       }),
     )
+    mesh.renderOrder = GAMEPLAY_RENDER_ORDER
+    return mesh
   }
 
-  private createPredictionDebugMarker(color: number): THREE.Mesh {
-    return new THREE.Mesh(
-      new THREE.SphereGeometry(gameConfig.player.radius * 1.12, 16, 12),
+  private createPredictionDebugMarker(color: number, renderOrder: number): THREE.Mesh {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(gameConfig.player.radius * 0.98, 16, 12),
       new THREE.MeshBasicMaterial({
         color,
         wireframe: true,
-        depthTest: false,
+        transparent: true,
+        opacity: 0.9,
+        depthTest: true,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: 2,
+        polygonOffsetUnits: 2,
       }),
     )
+    mesh.renderOrder = renderOrder
+    return mesh
   }
 
   private getInterpolationDebugMesh(index: number, kind: 'player' | 'box'): THREE.Mesh {
@@ -388,17 +411,31 @@ export class ArenaScene {
         geometry,
         new THREE.LineBasicMaterial({
           color: 0x111111,
-          depthTest: false,
+          depthTest: true,
+          depthWrite: false,
           transparent: true,
           opacity: 0.72,
         }),
       )
+      this.predictionDebugLine.renderOrder = DEBUG_LINE_RENDER_ORDER
       this.scene.add(this.predictionDebugLine)
       return
     }
 
     this.predictionDebugLine.geometry.dispose()
     this.predictionDebugLine.geometry = geometry
+  }
+
+  private bringGameplayMeshesToFront(): void {
+    for (const player of this.players.values()) {
+      this.scene.remove(player)
+      this.scene.add(player)
+    }
+
+    for (const box of this.boxes.values()) {
+      this.scene.remove(box)
+      this.scene.add(box)
+    }
   }
 
   private setPlayerMaterial(player: THREE.Mesh, isLocal: boolean): void {
