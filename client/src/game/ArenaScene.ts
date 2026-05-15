@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { gameConfig } from './config'
+import { boxLaunchLocalZ, buildSideWallMeshes, createSlopeMesh, slopeSurfaceWorldPosition } from './slopeGeometry'
 import type { InterpolationDebugState } from './sync/SnapshotInterpolator'
 import type { LocalPredictionDebugState } from './sync/LocalPlayerPredictor'
 import type { RenderBox, RenderPlayer, RenderWorldState } from './renderState'
@@ -20,16 +21,15 @@ export class ArenaScene {
   constructor(canvas: HTMLCanvasElement) {
     this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true })
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
-    this.renderer.setClearColor(0xe9eef2)
+    this.renderer.setClearColor(0xb8c4ce)
 
     this.scene = new THREE.Scene()
-    this.scene.fog = new THREE.Fog(0xe9eef2, 24, 46)
+    this.scene.fog = new THREE.Fog(0xb8c4ce, 28, 72)
 
-    this.camera = new THREE.PerspectiveCamera(48, 1, 0.1, 120)
-    this.camera.position.set(15, 16, 18)
-    this.camera.lookAt(0, 0, 0)
+    this.camera = new THREE.PerspectiveCamera(52, 1, 0.1, 160)
+    this.setupFixedCamera()
 
-    this.buildArena()
+    this.buildSlopeScene()
     this.resize()
 
     window.addEventListener('resize', () => this.resize())
@@ -221,42 +221,64 @@ export class ArenaScene {
     this.interpolationDebugMeshes = []
   }
 
-  private buildArena(): void {
-    const ambientLight = new THREE.HemisphereLight(0xffffff, 0x7c8790, 2.8)
+  private setupFixedCamera(): void {
+    const { lookAtX, lookAtY, lookAtZ, distance, elevationDegrees, yawDegrees } = gameConfig.camera
+    const elevationRad = (elevationDegrees * Math.PI) / 180
+    const yawRad = (yawDegrees * Math.PI) / 180
+    const horizontal = distance * Math.cos(elevationRad)
+    const height = distance * Math.sin(elevationRad)
+    // Default: behind the slope bottom, looking uphill (+Z). Yaw left shifts camera toward -X.
+    const offsetX = -horizontal * Math.sin(yawRad)
+    const offsetZ = -horizontal * Math.cos(yawRad)
+    this.camera.position.set(lookAtX + offsetX, lookAtY + height, lookAtZ + offsetZ)
+    this.camera.lookAt(lookAtX, lookAtY, lookAtZ)
+  }
+
+  private buildSlopeScene(): void {
+    const ambientLight = new THREE.HemisphereLight(0xf4f7fa, 0x5a6a75, 2.4)
     this.scene.add(ambientLight)
 
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.4)
-    keyLight.position.set(6, 10, 8)
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.1)
+    keyLight.position.set(-8, 14, -6)
     this.scene.add(keyLight)
 
-    const { arena } = gameConfig
-    const arenaSize = arena.halfSize * 2
-    const wallSpan = arenaSize + arena.wallThickness * 2
-    const floorHalfThickness = arena.floorThickness / 2
+    const fillLight = new THREE.DirectionalLight(0xd7e4ef, 0.9)
+    fillLight.position.set(10, 6, 12)
+    this.scene.add(fillLight)
 
-    const floor = new THREE.Mesh(new THREE.BoxGeometry(arenaSize, arena.floorThickness, arenaSize), new THREE.MeshStandardMaterial({ color: 0xf7f9fb, roughness: 0.82 }))
-    floor.position.y = -floorHalfThickness
-    this.scene.add(floor)
+    const slope = gameConfig.slope
+    const slopeMaterial = new THREE.MeshStandardMaterial({
+      color: 0x7d8f9c,
+      roughness: 0.82,
+      metalness: 0.03,
+    })
+    const wallMaterial = new THREE.MeshStandardMaterial({
+      color: 0x3f4d57,
+      roughness: 0.78,
+    })
 
-    this.addWall(0, arena.wallHeight / 2, -arena.halfSize, wallSpan, arena.wallHeight, arena.wallThickness)
-    this.addWall(0, arena.wallHeight / 2, arena.halfSize, wallSpan, arena.wallHeight, arena.wallThickness)
-    this.addWall(-arena.halfSize, arena.wallHeight / 2, 0, arena.wallThickness, arena.wallHeight, wallSpan)
-    this.addWall(arena.halfSize, arena.wallHeight / 2, 0, arena.wallThickness, arena.wallHeight, wallSpan)
+    this.scene.add(createSlopeMesh(slope, slopeMaterial))
+    for (const wall of buildSideWallMeshes(slope, wallMaterial)) {
+      this.scene.add(wall)
+    }
 
-    this.addGoalZone(arena.goalZone.x, arena.goalZone.y, arena.goalZone.z)
-  }
-
-  private addWall(x: number, y: number, z: number, width: number, height: number, depth: number): void {
-    const wall = new THREE.Mesh(new THREE.BoxGeometry(width, height, depth), new THREE.MeshStandardMaterial({ color: 0x485763, roughness: 0.75 }))
-    wall.position.set(x, y, z)
-    this.scene.add(wall)
-  }
-
-  private addGoalZone(x: number, y: number, z: number): void {
-    const { radius, height } = gameConfig.arena.goalZone
-    const zone = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, height, 48), new THREE.MeshStandardMaterial({ color: 0x2f83cc, transparent: true, opacity: 0.46 }))
-    zone.position.set(x, y, z)
-    this.scene.add(zone)
+    const launchMarkerPosition = slopeSurfaceWorldPosition(
+      slope,
+      0,
+      boxLaunchLocalZ(slope, 0, 0),
+      0.5,
+    )
+    const topMarker = new THREE.Mesh(
+      new THREE.BoxGeometry(slope.halfX * 1.6, 0.08, 1.2),
+      new THREE.MeshStandardMaterial({ color: 0xc45c26, transparent: true, opacity: 0.35 }),
+    )
+    topMarker.position.copy(launchMarkerPosition)
+    topMarker.quaternion.copy(
+      new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(slope.rotationX, slope.rotationY, slope.rotationZ, 'XYZ'),
+      ),
+    )
+    this.scene.add(topMarker)
   }
 
   private createPlayer(isLocal: boolean): THREE.Mesh {

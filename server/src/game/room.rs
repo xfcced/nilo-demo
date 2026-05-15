@@ -191,7 +191,7 @@ mod tests {
         );
         room.tick(1.0 / 30.0);
         let tick_one = player_snapshot(&room);
-        assert!(tick_one.vz < 0.0);
+        assert!(tick_one.vz > 0.0);
         assert_eq!(room.snapshot_for_player(1).server_tick, 1);
         assert_eq!(room.snapshot_for_player(1).last_received_input_seq, 1);
 
@@ -199,7 +199,7 @@ mod tests {
             1,
             2,
             PlayerInput {
-                right: true,
+                left: true,
                 ..PlayerInput::default()
             },
         );
@@ -229,7 +229,7 @@ mod tests {
         room.tick(1.0 / 30.0);
         let tick_two = player_snapshot(&room);
 
-        assert!(tick_two.z < tick_one.z);
+        assert!(tick_two.z > tick_one.z);
         assert_eq!(room.snapshot_for_player(1).server_tick, 2);
         assert_eq!(room.snapshot_for_player(1).last_received_input_seq, 1);
     }
@@ -265,7 +265,7 @@ mod tests {
 
         room.tick(1.0 / 30.0);
         let tick_one = player_snapshot(&room);
-        assert!(tick_one.vx > 0.0);
+        assert!(tick_one.vx < 0.0);
         assert_eq!(room.snapshot_for_player(1).last_received_input_seq, 2);
     }
 
@@ -301,7 +301,7 @@ mod tests {
             1,
             6,
             PlayerInput {
-                right: true,
+                left: true,
                 ..PlayerInput::default()
             },
         );

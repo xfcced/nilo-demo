@@ -8,33 +8,56 @@
     "maxFrameMs": 250,
     "maxTicksPerFrame": 8
   },
-  "arena": {
-    "halfSize": 12,
-    "wallHeight": 1.1,
-    "wallThickness": 0.24,
-    "floorThickness": 0.24,
-    "goalZone": {
-      "x": 8.5,
-      "y": 0.01,
-      "z": 8.5,
-      "radius": 1.25,
-      "height": 0.04
-    }
+  "slope": {
+    "centerX": 0,
+    "centerY": 2.4,
+    "centerZ": 0,
+    "halfX": 6.5,
+    "halfY": 0.2,
+    "halfZ": 12,
+    "rotationX": -0.36,
+    "rotationY": 0,
+    "rotationZ": 0,
+    "friction": 1,
+    "sideWallHeight": 2.8,
+    "sideWallThickness": 0.4,
+    "recycleZ": -9.5,
+    "launchLocalZInset": 1.4
   },
   "player": {
     "radius": 0.42,
-    "centerY": 0.34,
+    "spawnX": 0,
+    "spawnY": 0.55,
+    "spawnZ": -8.8,
+    "spawnSpreadX": 1.4,
     "maxSpeed": 7,
     "acceleration": 92,
     "deceleration": 56
   },
   "boxes": {
+    "count": 12,
     "halfExtent": 0.45,
-    "density": 0.16,
-    "gridColumns": 10,
-    "gridRows": 5,
-    "spacing": 1.15,
-    "centerZ": 1.4
+    "density": 0.4,
+    "friction": 0.85,
+    "linearDamping": 0.35,
+    "angularDamping": 0.5,
+    "columns": 4,
+    "spacing": 1.1,
+    "rowSpacing": 0.55,
+    "spawnLaunchImpulse": 1.4,
+    "recycleLaunchImpulse": 1.4,
+    "launchMinSpeed": 0.75,
+    "spawnRotationMaxYaw": 3.14159,
+    "spawnRotationMaxTilt": 0.35,
+    "surfaceClearance": 0.06
+  },
+  "camera": {
+    "lookAtX": 0,
+    "lookAtY": 3,
+    "lookAtZ": 0,
+    "distance": 24,
+    "elevationDegrees": 30,
+    "yawDegrees": 20
   },
   "interpolation": {
     "delayTicks": 2,

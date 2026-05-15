@@ -13,9 +13,10 @@ const DEFAULT_CONFIG_FILE: &str = "config/game.json";
 pub struct GameConfig {
     pub network: NetworkConfig,
     pub simulation: SimulationConfig,
-    pub arena: ArenaConfig,
+    pub slope: SlopeConfig,
     pub player: PlayerConfig,
     pub boxes: BoxesConfig,
+    pub camera: CameraConfig,
     pub interpolation: InterpolationConfig,
     pub protocol: ProtocolConfig,
 }
@@ -35,30 +36,38 @@ pub struct SimulationConfig {
     pub max_ticks_per_frame: usize,
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct ArenaConfig {
-    pub half_size: f32,
-    pub wall_height: f32,
-    pub wall_thickness: f32,
-    pub floor_thickness: f32,
-    pub goal_zone: GoalZoneConfig,
+pub struct SlopeConfig {
+    pub center_x: f32,
+    pub center_y: f32,
+    pub center_z: f32,
+    pub half_x: f32,
+    pub half_y: f32,
+    pub half_z: f32,
+    pub rotation_x: f32,
+    pub rotation_y: f32,
+    pub rotation_z: f32,
+    #[serde(default = "default_slope_friction")]
+    pub friction: f32,
+    pub side_wall_height: f32,
+    pub side_wall_thickness: f32,
+    pub recycle_z: f32,
+    pub launch_local_z_inset: f32,
 }
 
-#[derive(Clone, Debug, Deserialize)]
-pub struct GoalZoneConfig {
-    pub x: f32,
-    pub y: f32,
-    pub z: f32,
-    pub radius: f32,
-    pub height: f32,
+fn default_slope_friction() -> f32 {
+    1.0
 }
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlayerConfig {
     pub radius: f32,
-    pub center_y: f32,
+    pub spawn_x: f32,
+    pub spawn_y: f32,
+    pub spawn_z: f32,
+    pub spawn_spread_x: f32,
     pub max_speed: f32,
     pub acceleration: f32,
     pub deceleration: f32,
@@ -67,12 +76,33 @@ pub struct PlayerConfig {
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BoxesConfig {
+    pub count: u32,
     pub half_extent: f32,
     pub density: f32,
-    pub grid_columns: u32,
-    pub grid_rows: u32,
+    pub friction: f32,
+    pub linear_damping: f32,
+    pub angular_damping: f32,
+    pub columns: u32,
     pub spacing: f32,
-    pub center_z: f32,
+    pub row_spacing: f32,
+    pub spawn_launch_impulse: f32,
+    pub recycle_launch_impulse: f32,
+    pub launch_min_speed: f32,
+    pub spawn_rotation_max_yaw: f32,
+    pub spawn_rotation_max_tilt: f32,
+    pub surface_clearance: f32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraConfig {
+    pub look_at_x: f32,
+    pub look_at_y: f32,
+    pub look_at_z: f32,
+    pub distance: f32,
+    pub elevation_degrees: f32,
+    /// Yaw left from straight-on view toward +Z (degrees).
+    pub yaw_degrees: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]

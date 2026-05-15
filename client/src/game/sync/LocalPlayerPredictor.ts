@@ -1,5 +1,6 @@
 import RAPIER, { init as initRapier, type RigidBody, type World } from '@dimforge/rapier3d-compat'
 import { FIXED_STEP_SECONDS, gameConfig } from '../config'
+import { addSlopeColliders } from '../slopeGeometry'
 import type { PlayerSnapshot } from '../net/protocol'
 import type { RenderPlayer } from '../renderState'
 
@@ -192,7 +193,7 @@ export class LocalPlayerPredictor {
     this.world?.free()
     this.world = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
     this.world.integrationParameters.dt = FIXED_STEP_SECONDS
-    this.buildStaticArena()
+    this.buildSlopeScene()
 
     const body = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(authoritative.x, authoritative.y, authoritative.z)
@@ -204,25 +205,12 @@ export class LocalPlayerPredictor {
     this.world.createCollider(collider, this.playerBody)
   }
 
-  private buildStaticArena(): void {
+  private buildSlopeScene(): void {
     if (!this.world) {
       return
     }
 
-    const arenaHalfSize = gameConfig.arena.halfSize
-    const wallHeight = gameConfig.arena.wallHeight
-    const wallThickness = gameConfig.arena.wallThickness
-    const floorHalfThickness = gameConfig.arena.floorThickness / 2
-
-    this.addFixedCuboid(0, -floorHalfThickness, 0, arenaHalfSize, floorHalfThickness, arenaHalfSize)
-    this.addFixedCuboid(0, wallHeight / 2, -arenaHalfSize, arenaHalfSize + wallThickness, wallHeight / 2, wallThickness / 2)
-    this.addFixedCuboid(0, wallHeight / 2, arenaHalfSize, arenaHalfSize + wallThickness, wallHeight / 2, wallThickness / 2)
-    this.addFixedCuboid(-arenaHalfSize, wallHeight / 2, 0, wallThickness / 2, wallHeight / 2, arenaHalfSize + wallThickness)
-    this.addFixedCuboid(arenaHalfSize, wallHeight / 2, 0, wallThickness / 2, wallHeight / 2, arenaHalfSize + wallThickness)
-  }
-
-  private addFixedCuboid(x: number, y: number, z: number, hx: number, hy: number, hz: number): void {
-    this.world?.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz).setTranslation(x, y, z).setFriction(1.0))
+    addSlopeColliders(this.world)
   }
 
   private resetPlayerToAuthoritative(authoritative: PlayerSnapshot): void {
@@ -254,16 +242,16 @@ export class LocalPlayerPredictor {
     let dz = 0
 
     if (input.left) {
-      dx -= 1
-    }
-    if (input.right) {
       dx += 1
     }
+    if (input.right) {
+      dx -= 1
+    }
     if (input.up) {
-      dz -= 1
+      dz += 1
     }
     if (input.down) {
-      dz += 1
+      dz -= 1
     }
 
     const length = Math.hypot(dx, dz)

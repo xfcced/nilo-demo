@@ -4,7 +4,7 @@ import type { BoxSnapshot, ServerMessage } from '../net/protocol'
 import type { RenderBox } from '../renderState'
 
 const SERVER_TICK_MS = 1000 / gameConfig.simulation.tickRate
-const MAX_EXTRAPOLATION_SECONDS = 0.15
+const MAX_EXTRAPOLATION_SECONDS = 0.22
 const MIN_ANGULAR_SPEED = 0.0001
 
 type StateMessage = Extract<ServerMessage, { type: 'state' }>
