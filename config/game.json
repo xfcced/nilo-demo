@@ -44,9 +44,9 @@
     "columns": 4,
     "spacing": 1.1,
     "rowSpacing": 0.55,
-    "spawnLaunchImpulse": 1.4,
-    "recycleLaunchImpulse": 1.4,
-    "launchMinSpeed": 0.75,
+    "spawnLaunchImpulse": 3.0,
+    "recycleLaunchImpulse": 3.0,
+    "launchMinSpeed": 1.55,
     "spawnRotationMaxYaw": 3.14159,
     "spawnRotationMaxTilt": 0.35,
     "surfaceClearance": 0.06
