@@ -1,34 +1,29 @@
-# Nilo WebTransport Physics Demo - Phase 2
+# Nilo WebTransport Physics Demo
 
-This phase establishes the minimum server-authoritative multiplayer physics demo:
+A browser + Rust multiplayer physics demo: server-authoritative Rapier simulation over WebTransport, with client-side prediction for the local player and snapshot-based rendering for everyone else.
 
-- Rust WebTransport server
-- Browser WebTransport client
-- named reliable WebTransport channels with length-prefixed frames
-- `Join -> Welcome` over the `control` channel
-- `Ping -> Pong` RTT measurement
-- keyboard input sent from the browser
-- Rapier-backed server-authoritative player movement
-- Rapier-backed local player prediction with server reconciliation
-- dynamic server-owned physics boxes included in state snapshots
-- world state broadcast back to all connected players
-- tick-based snapshot interpolation for remote players and boxes
-- Fixed Three.js arena scene
-- Debug panel for connection state, player id, RTT, FPS, server tick, transport, and prediction metrics
+## What It Does
 
-No shared-object prediction, lobby, chat, goal scoring, or multi-scene abstraction is included yet.
+- **Slope arena** — tilted runway with side walls; players spawn at the bottom and move toward **+Z** (uphill).
+- **Rolling hazards** — server-owned dynamic boxes spawn near the top, roll downhill, and **recycle** back to the launch line when they pass the bottom `recycleZ`.
+- **Networking** — WebTransport with a named reliable `control` stream (JSON) plus unreliable datagrams (binary `input` / `state`).
+- **Local player** — client Rapier world with input history, reconciliation on authoritative snapshots, and soft correction when prediction drifts.
+- **Remote entities** — `PlayerExtrapolator` and `BoxExtrapolator` advance the latest snapshot using linear/angular velocity (not the interpolation buffer used for rendering).
+- **Rendering** — fixed third-person camera from `game.json`; Three.js slope meshes and colliders shared between client prediction and visuals.
+- **Dev panel** — connection/RTT/FPS/tick, transport counters, prediction metrics, state-interval and loss charts, **Restart**, and optional debug overlays.
+
 
 ## Shared Config
 
-Client and server read shared gameplay settings from:
+Client and server read gameplay settings from:
 
 ```text
 config/game.json
 ```
 
-This includes the WebTransport path/default port, simulation tick rate, arena dimensions, player movement rules, box spawn rules, interpolation settings, and binary protocol quantization scales.
+This covers network defaults, simulation tick rate, **slope** geometry and recycle line, player spawn/movement, **box** count/physics/launch impulses, **camera** aim, interpolation buffer settings (used for debug tooling), and binary **protocol** quantization scales.
 
-The server loads this file on startup. Override the path with:
+Override the server path with:
 
 ```bash
 GAME_CONFIG_FILE=/path/to/game.json cargo run
@@ -47,7 +42,7 @@ The server listens on:
 https://localhost:4433/webtransport
 ```
 
-It prints the SHA-256 certificate hash used by the browser `serverCertificateHashes` option. The generated client default currently matches `server/certs/localhost.pem`.
+On startup it prints the SHA-256 certificate hash for the browser `serverCertificateHashes` option. The default hash in `client/index.html` matches `server/certs/localhost.pem` when that cert is present.
 
 ## Local Certificates
 
@@ -66,7 +61,7 @@ openssl req -x509 -newkey ec \
   -addext "subjectAltName=DNS:localhost,IP:127.0.0.1"
 ```
 
-The generated `.pem` files are ignored by git. Do not commit `localhost-key.pem`; it is a private key.
+The generated `.pem` files are gitignored. Do not commit `localhost-key.pem`.
 
 After generating or regenerating the cert, update the hash in the client UI or in `client/index.html`:
 
@@ -88,20 +83,35 @@ Open:
 http://127.0.0.1:5173
 ```
 
-Click `Connect`. A successful connection shows:
+Click **Connect**. A successful session shows connection state, assigned player id, RTT, FPS, latest `serverTick`, and prediction/transport metrics in the dev panel.
 
-- `Connection: connected`
-- assigned `Player ID`
-- RTT updated once per second
-- latest `serverTick` from world state snapshots
+### Controls
 
-Use `WASD` or arrow keys to move. The local player is predicted in a client-side Rapier world and reconciled against server-authoritative snapshots. Remote players and boxes are rendered through a client-side interpolation buffer. Shared physics boxes remain server-authoritative and are not predicted locally.
+Use **WASD**, arrow keys, or the on-screen pad.
+
+| Input | World motion |
+| --- | --- |
+| W / ↑ | Uphill (**+Z**) |
+| S / ↓ | Downhill (**−Z**) |
+| A / ← | Screen-left across the slope |
+| D / → | Screen-right across the slope |
+
+A/D are mapped for the fixed camera (not world −X/+X). The local ball is predicted in a client Rapier scene that mirrors the slope colliders; the server remains authoritative and reconciliation replays inputs after each accepted snapshot.
+
+Remote players and boxes are drawn from the latest state plus velocity extrapolation. Boxes are not predicted locally.
+
+### Debug overlays
+
+- **Prediction debug** — wireframe spheres for authoritative (red), predicted physics (yellow), and rendered visual (cyan) positions, plus a polyline between them. The solid local player mesh is drawn on top.
+- **Interpolation debug** — visualizes samples held in `SnapshotInterpolator` (the delay-buffer implementation). This path is **not** used for normal rendering today; it is kept for inspecting what interpolation would use.
+
+**Restart** sends a control-channel `restart` and resets local sync state when the server broadcasts `restarted`.
 
 ## Docker Compose Deployment
 
-The Compose setup runs the Vite client as static files behind Nginx and runs the Rust WebTransport server directly. WebTransport is not proxied through Nginx.
+The Compose setup serves the Vite client as static files behind Nginx and runs the Rust WebTransport server directly. WebTransport is not proxied through Nginx.
 
-This Compose file is configured for:
+Default hostnames:
 
 ```text
 nilo.luchang.xyz
@@ -115,7 +125,7 @@ nilo.luchang.xyz -> your VPS public IP
 wt.luchang.xyz   -> your VPS public IP
 ```
 
-Open these ports in the VPS firewall and cloud security group:
+Open these ports on the VPS firewall and cloud security group:
 
 ```text
 TCP 80
@@ -152,9 +162,9 @@ docker compose logs -f server
 
 The production client build leaves `VITE_CERTIFICATE_HASH` empty because a public CA certificate is validated by the browser. For local self-signed certificates, pass the SHA-256 certificate hash as `VITE_CERTIFICATE_HASH`.
 
-## Current Message Protocol
+## Message Protocol
 
-The client opens a named reliable `control` channel over a bidirectional WebTransport stream. Each stream starts with a length-prefixed UTF-8 channel-name frame, then carries length-prefixed payload frames. Low-rate control messages are still JSON:
+The client opens a named reliable `control` channel over a bidirectional WebTransport stream. Each stream starts with a length-prefixed UTF-8 channel-name frame, then carries length-prefixed payload frames. Low-rate control messages are JSON:
 
 ```ts
 type ClientMessage =
@@ -205,8 +215,27 @@ box, 26 bytes:
   i16 wx, wy, wz
 ```
 
-Positions, velocities, and angular velocities are quantized with `protocol.positionScale`; quaternion components are quantized with `protocol.quaternionScale`. Player and box rotations use smallest-three quaternion compression: the largest absolute component is omitted, the quaternion is sign-flipped if needed so the omitted component is positive, and the other three components are quantized into `i16`.
+Positions, velocities, and angular velocities are quantized with `protocol.positionScale`; quaternion components use `protocol.quaternionScale`. Rotations use smallest-three quaternion compression: the largest absolute component is omitted, the quaternion is sign-flipped so the omitted component is positive, and the other three components are stored as `i16`.
 
-State datagrams always include all current players. `serverTick` is the authoritative simulation timeline used for reconciliation: the client resets to the authoritative state for that tick, drops local prediction history at or before that tick, then replays newer local prediction inputs. `lastReceivedInputSeq` is connection-local debug/ack data for the newest input packet the server accepted; it is not used as the replay boundary. The server ignores repeated or older `inputSeq` values for a connection and otherwise applies the latest accepted input on subsequent simulation ticks. New connections receive one full box baseline, then boxes are changed-only: if a box's quantized position, rotation, linear velocity, and angular velocity match the last server snapshot, it is omitted and the client keeps its previous box state.
+State datagrams always include all current players. `serverTick` is the authoritative simulation timeline: the client resets to the authoritative pose for that tick, drops local input history at or before that tick, then replays newer local inputs. `lastReceivedInputSeq` reports the newest input sequence the server accepted on that connection (debug/ack; not the replay boundary). The server ignores duplicate or older `inputSeq` values and applies the latest accepted input on subsequent ticks.
 
-`serverTick` is the interpolation timeline. Ping RTT is measured entirely on the client by matching `ping.pingSeq` to `pong.pingSeq`.
+New connections receive one full box baseline; later updates are **changed-only** — if a box’s quantized pose and velocities match the previous snapshot, it is omitted and the client keeps extrapolating from its last known state.
+
+Ping RTT is measured on the client by matching `ping.pingSeq` to `pong.pingSeq`.
+
+## Client Sync Overview
+
+```text
+state datagram
+  ├─► SnapshotInterpolator.pushSnapshot   (buffer + stale-tick filter; debug only)
+  ├─► PlayerExtrapolator.pushSnapshot     ──► remote player render positions
+  ├─► BoxExtrapolator.pushSnapshot        ──► box render poses
+  └─► LocalPlayerPredictor.reconcile      ──► local player prediction
+
+each frame
+  ├─► LocalPlayerPredictor.renderPlayer   (local ball)
+  ├─► PlayerExtrapolator.sample           (remote players)
+  └─► BoxExtrapolator.sample              (boxes)
+```
+
+`game.json` → `interpolation.delayTicks` / `entityExpireTicks` still configure `SnapshotInterpolator` for the interpolation debug view. Switching live rendering back to interpolation would mean feeding `interpolator.sample()` into `ArenaScene` instead of the extrapolators.
