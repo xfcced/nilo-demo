@@ -23,13 +23,6 @@ type PredictedPosition = {
   z: number
 }
 
-type PredictedPose = PredictedPosition & {
-  qx: number
-  qy: number
-  qz: number
-  qw: number
-}
-
 export type LocalPredictionDebugState = {
   authoritative: PredictedPosition | null
   predictedPhysics: PredictedPosition | null
@@ -139,7 +132,6 @@ export class LocalPlayerPredictor {
     if (!rendered) {
       return null
     }
-    const rotation = this.extrapolatedPhysicsRotation(fixedStepAlpha)
 
     this.lastRenderedPosition = rendered
     return {
@@ -148,10 +140,6 @@ export class LocalPlayerPredictor {
       x: rendered.x,
       y: rendered.y,
       z: rendered.z,
-      qx: rotation.qx,
-      qy: rotation.qy,
-      qz: rotation.qz,
-      qw: rotation.qw,
     }
   }
 
@@ -208,11 +196,9 @@ export class LocalPlayerPredictor {
 
     const body = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(authoritative.x, authoritative.y, authoritative.z)
-      .setRotation({ x: authoritative.qx, y: authoritative.qy, z: authoritative.qz, w: authoritative.qw })
       .setLinvel(authoritative.vx, authoritative.vy, authoritative.vz)
-      .setAngvel({ x: authoritative.wx, y: authoritative.wy, z: authoritative.wz })
-      .setLinearDamping(gameConfig.player.linearDamping)
-      .setAngularDamping(gameConfig.player.angularDamping)
+      .lockRotations()
+      .setLinearDamping(2.5)
     this.playerBody = this.world.createRigidBody(body)
     const collider = RAPIER.ColliderDesc.ball(gameConfig.player.radius).setFriction(1.0).setRestitution(0.0)
     this.world.createCollider(collider, this.playerBody)
@@ -245,9 +231,8 @@ export class LocalPlayerPredictor {
     }
 
     this.playerBody.setTranslation({ x: authoritative.x, y: authoritative.y, z: authoritative.z }, true)
-    this.playerBody.setRotation({ x: authoritative.qx, y: authoritative.qy, z: authoritative.qz, w: authoritative.qw }, true)
     this.playerBody.setLinvel({ x: authoritative.vx, y: authoritative.vy, z: authoritative.vz }, true)
-    this.playerBody.setAngvel({ x: authoritative.wx, y: authoritative.wy, z: authoritative.wz }, true)
+    this.playerBody.setAngvel({ x: 0, y: 0, z: 0 }, true)
   }
 
   private stepWorld(input: MovementInput): void {
@@ -287,42 +272,17 @@ export class LocalPlayerPredictor {
       dz /= length
     }
 
-    const hasInput = length > 0
-    if (hasInput) {
-      this.playerBody.addTorque(
-        {
-          x: dz * gameConfig.player.moveTorque,
-          y: 0,
-          z: -dx * gameConfig.player.moveTorque,
-        },
-        true,
-      )
-    }
-
+    const { maxSpeed, acceleration, deceleration } = gameConfig.player
+    const maxDelta = (length > 0 ? acceleration : deceleration) * FIXED_STEP_SECONDS
     const velocity = this.playerBody.linvel()
-    const angularVelocity = this.playerBody.angvel()
-    const rollingVelocity = {
-      x: -angularVelocity.z * gameConfig.player.radius,
-      z: angularVelocity.x * gameConfig.player.radius,
-    }
-    const horizontalSpeed = Math.hypot(velocity.x, velocity.z)
-    const rollingSpeed = Math.hypot(rollingVelocity.x, rollingVelocity.z)
-
-    const horizontalAngularSpeed = Math.hypot(angularVelocity.x, angularVelocity.z)
-    const stuckSpinning = horizontalSpeed < 0.25 && rollingSpeed > gameConfig.player.slipBrakeSpeed
-    if ((!hasInput && horizontalAngularSpeed > 0.15) || (hasInput && stuckSpinning)) {
-      this.playerBody.addTorque(
-        angularBrakeTorque(
-          angularVelocity.x,
-          angularVelocity.z,
-          gameConfig.player.spinBrakeTorque,
-          this.playerBody.mass(),
-          gameConfig.player.radius,
-          FIXED_STEP_SECONDS,
-        ),
-        true,
-      )
-    }
+    this.playerBody.setLinvel(
+      {
+        x: moveToward(velocity.x, dx * maxSpeed, maxDelta),
+        y: velocity.y,
+        z: moveToward(velocity.z, dz * maxSpeed, maxDelta),
+      },
+      true,
+    )
   }
 
   private decayCorrection(renderDeltaSeconds: number): void {
@@ -378,32 +338,6 @@ export class LocalPlayerPredictor {
     }
   }
 
-  private extrapolatedPhysicsRotation(fixedStepAlpha: number): Pick<PredictedPose, 'qx' | 'qy' | 'qz' | 'qw'> {
-    const rotation = this.playerBody?.rotation()
-    const angularVelocity = this.playerBody?.angvel()
-    if (!rotation || !angularVelocity) {
-      return { qx: 0, qy: 0, qz: 0, qw: 1 }
-    }
-
-    const angularSpeed = Math.hypot(angularVelocity.x, angularVelocity.y, angularVelocity.z)
-    if (angularSpeed < 0.0001) {
-      return { qx: rotation.x, qy: rotation.y, qz: rotation.z, qw: rotation.w }
-    }
-
-    const clampedFixedStepAlpha = Math.max(0, Math.min(1, fixedStepAlpha))
-    const frameLeadSeconds = clampedFixedStepAlpha * FIXED_STEP_SECONDS
-    const halfAngle = (angularSpeed * frameLeadSeconds) / 2
-    const sinHalfAngle = Math.sin(halfAngle)
-    const delta = {
-      x: (angularVelocity.x / angularSpeed) * sinHalfAngle,
-      y: (angularVelocity.y / angularSpeed) * sinHalfAngle,
-      z: (angularVelocity.z / angularSpeed) * sinHalfAngle,
-      w: Math.cos(halfAngle),
-    }
-
-    return normalizeQuaternion(multiplyQuaternions(delta, rotation))
-  }
-
   private physicsPosition(): PredictedPosition | null {
     const position = this.playerBody?.translation()
     if (!position) {
@@ -418,43 +352,15 @@ export class LocalPlayerPredictor {
   }
 }
 
+function moveToward(current: number, target: number, maxDelta: number): number {
+  const delta = target - current
+  if (Math.abs(delta) <= maxDelta) {
+    return target
+  }
+
+  return current + Math.sign(delta) * maxDelta
+}
+
 function distance(a: PredictedPosition, b: PredictedPosition): number {
   return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z)
-}
-
-function angularBrakeTorque(wx: number, wz: number, maxTorque: number, mass: number, radius: number, deltaSeconds: number): { x: number; y: number; z: number } {
-  const angularSpeed = Math.hypot(wx, wz)
-  if (angularSpeed <= 0.15 || deltaSeconds <= 0 || mass <= 0 || radius <= 0) {
-    return { x: 0, y: 0, z: 0 }
-  }
-
-  const inertia = 0.4 * mass * radius * radius
-  const torque = Math.min(maxTorque, (angularSpeed * inertia) / deltaSeconds)
-  return { x: (-wx / angularSpeed) * torque, y: 0, z: (-wz / angularSpeed) * torque }
-}
-
-function multiplyQuaternions(
-  a: { x: number; y: number; z: number; w: number },
-  b: { x: number; y: number; z: number; w: number },
-): Pick<PredictedPose, 'qx' | 'qy' | 'qz' | 'qw'> {
-  return {
-    qx: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-    qy: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-    qz: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
-    qw: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z,
-  }
-}
-
-function normalizeQuaternion(rotation: Pick<PredictedPose, 'qx' | 'qy' | 'qz' | 'qw'>): Pick<PredictedPose, 'qx' | 'qy' | 'qz' | 'qw'> {
-  const length = Math.hypot(rotation.qx, rotation.qy, rotation.qz, rotation.qw)
-  if (length <= 0) {
-    return { qx: 0, qy: 0, qz: 0, qw: 1 }
-  }
-
-  return {
-    qx: rotation.qx / length,
-    qy: rotation.qy / length,
-    qz: rotation.qz / length,
-    qw: rotation.qw / length,
-  }
 }

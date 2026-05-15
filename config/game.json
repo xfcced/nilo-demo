@@ -23,12 +23,10 @@
   },
   "player": {
     "radius": 0.42,
-    "centerY": 0.42,
-    "moveTorque": 0.12,
-    "spinBrakeTorque": 0.06,
-    "slipBrakeSpeed": 1.4,
-    "linearDamping": 3,
-    "angularDamping": 8
+    "centerY": 0.34,
+    "maxSpeed": 7,
+    "acceleration": 92,
+    "deceleration": 56
   },
   "boxes": {
     "halfExtent": 0.45,

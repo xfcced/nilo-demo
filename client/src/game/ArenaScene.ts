@@ -139,7 +139,6 @@ export class ArenaScene {
       }
 
       player.position.set(playerState.x, playerState.y, playerState.z)
-      player.quaternion.set(playerState.qx, playerState.qy, playerState.qz, playerState.qw)
       this.setPlayerMaterial(player, playerState.isLocal)
     }
 

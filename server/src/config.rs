@@ -59,11 +59,9 @@ pub struct GoalZoneConfig {
 pub struct PlayerConfig {
     pub radius: f32,
     pub center_y: f32,
-    pub move_torque: f32,
-    pub spin_brake_torque: f32,
-    pub slip_brake_speed: f32,
-    pub linear_damping: f32,
-    pub angular_damping: f32,
+    pub max_speed: f32,
+    pub acceleration: f32,
+    pub deceleration: f32,
 }
 
 #[derive(Clone, Debug, Deserialize)]
