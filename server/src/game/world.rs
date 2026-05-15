@@ -133,9 +133,13 @@ impl World {
         let horizontal_angular_velocity = Vector::new(angular_velocity.x, 0.0, angular_velocity.z);
         let rolling_velocity =
             horizontal_angular_velocity.cross(Vector::Y) * self.config.player.radius;
-        let slip_speed = (rolling_velocity - horizontal_velocity).length();
+        let horizontal_speed = horizontal_velocity.length();
+        let rolling_speed = rolling_velocity.length();
 
-        if !has_input || slip_speed > self.config.player.slip_brake_speed {
+        let horizontal_angular_speed = horizontal_angular_velocity.length();
+        let stuck_spinning =
+            horizontal_speed < 0.25 && rolling_speed > self.config.player.slip_brake_speed;
+        if (!has_input && horizontal_angular_speed > 0.15) || (has_input && stuck_spinning) {
             let brake_torque = angular_brake_torque(
                 horizontal_angular_velocity,
                 self.config.player.spin_brake_torque,
@@ -325,7 +329,7 @@ fn angular_brake_torque(
     delta_seconds: f32,
 ) -> Vector {
     let angular_speed = horizontal_angular_velocity.length();
-    if angular_speed <= 0.001 || delta_seconds <= 0.0 || mass <= 0.0 || radius <= 0.0 {
+    if angular_speed <= 0.15 || delta_seconds <= 0.0 || mass <= 0.0 || radius <= 0.0 {
         return Vector::ZERO;
     }
 
@@ -414,7 +418,7 @@ mod tests {
             .linvel()
             .length();
 
-        for _ in 0..120 {
+        for _ in 0..240 {
             world.apply_player_input(1, PlayerInput::default(), 1.0 / 60.0);
             world.step(1.0 / 60.0);
         }

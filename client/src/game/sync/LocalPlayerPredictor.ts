@@ -305,9 +305,12 @@ export class LocalPlayerPredictor {
       x: -angularVelocity.z * gameConfig.player.radius,
       z: angularVelocity.x * gameConfig.player.radius,
     }
-    const slipSpeed = Math.hypot(rollingVelocity.x - velocity.x, rollingVelocity.z - velocity.z)
+    const horizontalSpeed = Math.hypot(velocity.x, velocity.z)
+    const rollingSpeed = Math.hypot(rollingVelocity.x, rollingVelocity.z)
 
-    if (!hasInput || slipSpeed > gameConfig.player.slipBrakeSpeed) {
+    const horizontalAngularSpeed = Math.hypot(angularVelocity.x, angularVelocity.z)
+    const stuckSpinning = horizontalSpeed < 0.25 && rollingSpeed > gameConfig.player.slipBrakeSpeed
+    if ((!hasInput && horizontalAngularSpeed > 0.15) || (hasInput && stuckSpinning)) {
       this.playerBody.addTorque(
         angularBrakeTorque(
           angularVelocity.x,
@@ -421,7 +424,7 @@ function distance(a: PredictedPosition, b: PredictedPosition): number {
 
 function angularBrakeTorque(wx: number, wz: number, maxTorque: number, mass: number, radius: number, deltaSeconds: number): { x: number; y: number; z: number } {
   const angularSpeed = Math.hypot(wx, wz)
-  if (angularSpeed <= 0.001 || deltaSeconds <= 0 || mass <= 0 || radius <= 0) {
+  if (angularSpeed <= 0.15 || deltaSeconds <= 0 || mass <= 0 || radius <= 0) {
     return { x: 0, y: 0, z: 0 }
   }
 
