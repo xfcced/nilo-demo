@@ -6,8 +6,6 @@ type CloseHandler = (reason: string) => void
 type ErrorHandler = (error: Error) => void
 
 const CONTROL_CHANNEL = 'control'
-const PROBE_CHANNEL = 'probe'
-const DATAGRAM_PROBE = 'nilo-dgram-probe'
 
 export class GameConnection {
   private transport = new WebTransportClient()
@@ -31,7 +29,6 @@ export class GameConnection {
   async connect(url: string, certificateHashHex: string): Promise<void> {
     await this.transport.connect(url, certificateHashHex)
     await this.transport.openReliableChannel(CONTROL_CHANNEL)
-    await this.sendProbeMessages()
   }
 
   send(message: ClientMessage): Promise<void> {
@@ -82,13 +79,6 @@ export class GameConnection {
     } catch (error) {
       this.emitError(error instanceof Error ? error : new Error(String(error)))
     }
-  }
-
-  private async sendProbeMessages(): Promise<void> {
-    await Promise.allSettled([
-      this.transport.sendDatagram(this.encoder.encode(DATAGRAM_PROBE)),
-      this.transport.sendReliable(PROBE_CHANNEL, this.encoder.encode('nilo-stream-probe')),
-    ])
   }
 
   private emitError(error: Error): void {
