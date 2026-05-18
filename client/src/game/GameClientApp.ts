@@ -132,6 +132,40 @@ export class GameClientApp {
     })
   }
 
+  private render(renderDeltaMs: number, fixedStepAlpha: number): void {
+    this.updateFps(renderDeltaMs)
+    this.updateNetworkStats(renderDeltaMs)
+    const nowMs = performance.now()
+    const renderDeltaSeconds = renderDeltaMs / 1000
+    const localPlayer = this.localPlayerId === null ? null : this.localPlayerPredictor.renderPlayer(this.localPlayerId, fixedStepAlpha, renderDeltaSeconds)
+    this.interpolator.sample(nowMs, this.localPlayerId, localPlayer)
+    const renderState = {
+      players: this.playerExtrapolator.sample(nowMs, this.localPlayerId, localPlayer),
+      boxes: this.boxExtrapolator.sample(nowMs),
+    }
+    this.arena.setLocalPredictionDebug(this.debugOptions.predictionDebug && localPlayer ? this.localPlayerPredictor.debugState() : null)
+    this.arena.setInterpolationDebug(this.debugOptions.interpolationDebug ? this.interpolator.debugSamples(this.localPlayerId) : null)
+    this.arena.applyRenderState(renderState)
+    this.arena.render()
+  }
+
+  private fixedUpdate(): void {
+    if (!this.connected || this.localPlayerId === null) {
+      return
+    }
+
+    this.pingElapsedMs += FIXED_STEP_MS
+
+    if (this.localPredictionTick !== null) {
+      this.sendInput()
+    }
+
+    if (this.pingElapsedMs >= PING_SEND_MS) {
+      this.pingElapsedMs -= PING_SEND_MS
+      this.sendPing()
+    }
+  }
+
   private bindUiEvents(): void {
     this.elements.connectButton.addEventListener('click', () => {
       void this.connect()
@@ -238,40 +272,6 @@ export class GameClientApp {
       }
       this.debugPanel.setRestartEnabled(true)
     }
-  }
-
-  private fixedUpdate(): void {
-    if (!this.connected || this.localPlayerId === null) {
-      return
-    }
-
-    this.pingElapsedMs += FIXED_STEP_MS
-
-    if (this.localPredictionTick !== null) {
-      this.sendInput()
-    }
-
-    if (this.pingElapsedMs >= PING_SEND_MS) {
-      this.pingElapsedMs -= PING_SEND_MS
-      this.sendPing()
-    }
-  }
-
-  private render(renderDeltaMs: number, fixedStepAlpha: number): void {
-    this.updateFps(renderDeltaMs)
-    this.updateNetworkStats(renderDeltaMs)
-    const nowMs = performance.now()
-    const renderDeltaSeconds = renderDeltaMs / 1000
-    const localPlayer = this.localPlayerId === null ? null : this.localPlayerPredictor.renderPlayer(this.localPlayerId, fixedStepAlpha, renderDeltaSeconds)
-    this.interpolator.sample(nowMs, this.localPlayerId, localPlayer)
-    const renderState = {
-      players: this.playerExtrapolator.sample(nowMs, this.localPlayerId, localPlayer),
-      boxes: this.boxExtrapolator.sample(nowMs),
-    }
-    this.arena.setLocalPredictionDebug(this.debugOptions.predictionDebug && localPlayer ? this.localPlayerPredictor.debugState() : null)
-    this.arena.setInterpolationDebug(this.debugOptions.interpolationDebug ? this.interpolator.debugSamples(this.localPlayerId) : null)
-    this.arena.applyRenderState(renderState)
-    this.arena.render()
   }
 
   private updateFps(renderDeltaMs: number): void {

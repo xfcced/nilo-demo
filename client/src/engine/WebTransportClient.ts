@@ -21,6 +21,7 @@ type WebTransportDatagrams = WebTransport['datagrams'] & {
 
 const FRAME_HEADER_BYTES = 4
 const MAX_FRAME_BYTES = 1024 * 1024
+const CONTROL_CHANNEL_ID = 1
 
 export class WebTransportClient {
   private transport: WebTransport | null = null
@@ -31,7 +32,6 @@ export class WebTransportClient {
   private datagramHandlers = new Set<DatagramHandler>()
   private closeHandlers = new Set<CloseHandler>()
   private errorHandlers = new Set<ErrorHandler>()
-  private encoder = new TextEncoder()
   private counters: TransportCounters = createEmptyCounters()
 
   async connect(url: string, certificateHashHex: string): Promise<void> {
@@ -139,7 +139,7 @@ export class WebTransportClient {
 
     const stream = await this.transport.createBidirectionalStream()
     const writer = stream.writable.getWriter() as WritableStreamDefaultWriter<Uint8Array>
-    await writer.write(encodeFrame(this.encoder.encode(name)))
+    await writer.write(encodeFrame(new Uint8Array([channelIdForName(name)])))
 
     this.reliableChannels.set(name, { writer })
     void this.readReliableChannel(name, stream.readable as ReadableStream<Uint8Array>)
@@ -196,9 +196,7 @@ export class WebTransportClient {
   }
 
   private assertValidChannelName(name: string): void {
-    if (!name.trim()) {
-      throw new Error('Reliable channel name cannot be empty')
-    }
+    channelIdForName(name)
   }
 
   private emitClose(reason: string): void {
@@ -212,6 +210,14 @@ export class WebTransportClient {
   private emitError(error: Error): void {
     this.errorHandlers.forEach((handler) => handler(error))
   }
+}
+
+function channelIdForName(name: string): number {
+  if (name === 'control') {
+    return CONTROL_CHANNEL_ID
+  }
+
+  throw new Error(`Unknown reliable channel: ${name}`)
 }
 
 function createTransportOptions(certificateHashHex: string): WebTransportOptions {

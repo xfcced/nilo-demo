@@ -42,14 +42,35 @@ export type BoxSnapshot = {
 
 const BINARY_TYPE_INPUT = 1
 const BINARY_TYPE_STATE = 2
+const BINARY_TYPE_JOIN = 3
+const BINARY_TYPE_RESTART = 4
+const BINARY_TYPE_PING = 5
+const BINARY_TYPE_WELCOME = 6
+const BINARY_TYPE_RESTARTED = 7
+const BINARY_TYPE_PONG = 8
+const BINARY_TYPE_ERROR = 9
 const INPUT_BYTES = 6
 const STATE_HEADER_BYTES = 11
 const PLAYER_BYTES = 13
 const BOX_BYTES = 26
 const SMALLEST_THREE_RANGE = Math.SQRT1_2
+const U32_MAX = 0xffffffff
+const textDecoder = new TextDecoder()
 
-export function encodeClientMessage(message: ClientMessage): string {
-  return JSON.stringify(message)
+export function encodeReliableClientMessage(message: Exclude<ClientMessage, { type: 'input' }>): Uint8Array {
+  if (message.type === 'join') {
+    return new Uint8Array([BINARY_TYPE_JOIN])
+  }
+
+  if (message.type === 'restart') {
+    return new Uint8Array([BINARY_TYPE_RESTART])
+  }
+
+  const payload = new Uint8Array(5)
+  const view = new DataView(payload.buffer)
+  view.setUint8(0, BINARY_TYPE_PING)
+  writeU32(view, 1, message.pingSeq, 'pingSeq')
+  return payload
 }
 
 export function encodeInputDatagram(message: Extract<ClientMessage, { type: 'input' }>): Uint8Array {
@@ -122,90 +143,48 @@ export function decodeStateDatagram(payload: Uint8Array): ServerMessage {
   return { type: 'state', serverTick, lastReceivedInputSeq, players, boxes }
 }
 
-export function decodeServerMessage(line: string): ServerMessage {
-  const value = JSON.parse(line) as unknown
-  if (!isServerMessage(value)) {
-    throw new Error(`Invalid server message: ${line}`)
-  }
-  return value
-}
-
-function isServerMessage(value: unknown): value is ServerMessage {
-  if (!value || typeof value !== 'object') {
-    return false
+export function decodeReliableServerMessage(payload: Uint8Array): ServerMessage {
+  if (payload.byteLength < 1) {
+    throw new Error('Invalid reliable message size: 0')
   }
 
-  const message = value as Partial<ServerMessage>
+  const view = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
+  const type = view.getUint8(0)
 
-  if (message.type === 'welcome') {
-    return typeof message.playerId === 'number'
+  if (type === BINARY_TYPE_WELCOME) {
+    if (payload.byteLength !== 2) {
+      throw new Error(`Invalid welcome message size: ${payload.byteLength}`)
+    }
+    return { type: 'welcome', playerId: view.getUint8(1) }
   }
 
-  if (message.type === 'restarted') {
-    return true
+  if (type === BINARY_TYPE_RESTARTED) {
+    if (payload.byteLength !== 1) {
+      throw new Error(`Invalid restarted message size: ${payload.byteLength}`)
+    }
+    return { type: 'restarted' }
   }
 
-  if (message.type === 'pong') {
-    return typeof message.pingSeq === 'number'
+  if (type === BINARY_TYPE_PONG) {
+    if (payload.byteLength !== 5) {
+      throw new Error(`Invalid pong message size: ${payload.byteLength}`)
+    }
+    return { type: 'pong', pingSeq: view.getUint32(1, false) }
   }
 
-  if (message.type === 'state') {
-    return (
-      typeof message.serverTick === 'number' &&
-      typeof message.lastReceivedInputSeq === 'number' &&
-      Array.isArray(message.players) &&
-      message.players.every(isPlayerSnapshot) &&
-      Array.isArray(message.boxes) &&
-      message.boxes.every(isBoxSnapshot)
-    )
+  if (type === BINARY_TYPE_ERROR) {
+    if (payload.byteLength < 3) {
+      throw new Error(`Invalid error message size: ${payload.byteLength}`)
+    }
+    const length = view.getUint16(1, false)
+    const expectedBytes = 3 + length
+    if (payload.byteLength !== expectedBytes) {
+      throw new Error(`Invalid error message size: ${payload.byteLength}, expected ${expectedBytes}`)
+    }
+    return { type: 'error', message: textDecoder.decode(payload.subarray(3)) }
   }
 
-  if (message.type === 'error') {
-    return typeof message.message === 'string'
-  }
-
-  return false
-}
-
-function isPlayerSnapshot(value: unknown): value is PlayerSnapshot {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-
-  const player = value as Partial<PlayerSnapshot>
-  return (
-    typeof player.playerId === 'number' &&
-    typeof player.x === 'number' &&
-    typeof player.y === 'number' &&
-    typeof player.z === 'number' &&
-    typeof player.vx === 'number' &&
-    typeof player.vy === 'number' &&
-    typeof player.vz === 'number'
-  )
-}
-
-function isBoxSnapshot(value: unknown): value is BoxSnapshot {
-  if (!value || typeof value !== 'object') {
-    return false
-  }
-
-  const box = value as Partial<BoxSnapshot>
-  return (
-    typeof box.boxId === 'number' &&
-    typeof box.x === 'number' &&
-    typeof box.y === 'number' &&
-    typeof box.z === 'number' &&
-    typeof box.qx === 'number' &&
-    typeof box.qy === 'number' &&
-    typeof box.qz === 'number' &&
-    typeof box.qw === 'number' &&
-    typeof box.vx === 'number' &&
-    typeof box.vy === 'number' &&
-    typeof box.vz === 'number' &&
-    typeof box.wx === 'number' &&
-    typeof box.wy === 'number' &&
-    typeof box.wz === 'number'
-  )
+  throw new Error(`Unexpected reliable message type: ${type}`)
 }
 
 function encodeButtons(message: Extract<ClientMessage, { type: 'input' }>): number {
@@ -260,6 +239,14 @@ function readSmallestThreeQuaternion(view: DataView, offset: number): Pick<BoxSn
     qz: components[2],
     qw: components[3],
   })
+}
+
+function writeU32(view: DataView, offset: number, value: number, label: string): void {
+  if (!Number.isInteger(value) || value < 0 || value > U32_MAX) {
+    throw new Error(`${label} exceeds binary protocol range: ${value}`)
+  }
+
+  view.setUint32(offset, value, false)
 }
 
 function normalizeQuaternion(rotation: Pick<BoxSnapshot, 'qx' | 'qy' | 'qz' | 'qw'>): Pick<BoxSnapshot, 'qx' | 'qy' | 'qz' | 'qw'> {

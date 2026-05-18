@@ -1,5 +1,5 @@
 import { WebTransportClient, type TransportCounters } from '../../engine/WebTransportClient'
-import { decodeServerMessage, decodeStateDatagram, encodeClientMessage, encodeInputDatagram, type ClientMessage, type ServerMessage } from './protocol'
+import { decodeReliableServerMessage, decodeStateDatagram, encodeInputDatagram, encodeReliableClientMessage, type ClientMessage, type ServerMessage } from './protocol'
 
 type MessageHandler = (message: ServerMessage) => void
 type CloseHandler = (reason: string) => void
@@ -12,8 +12,6 @@ export class GameConnection {
   private messageHandlers = new Set<MessageHandler>()
   private closeHandlers = new Set<CloseHandler>()
   private errorHandlers = new Set<ErrorHandler>()
-  private encoder = new TextEncoder()
-  private decoder = new TextDecoder()
 
   constructor() {
     this.transport.onReliableMessage(CONTROL_CHANNEL, (payload) => this.handleControlPayload(payload))
@@ -36,7 +34,7 @@ export class GameConnection {
       return this.transport.sendDatagram(encodeInputDatagram(message))
     }
 
-    return this.transport.sendReliable(CONTROL_CHANNEL, this.encoder.encode(encodeClientMessage(message)))
+    return this.transport.sendReliable(CONTROL_CHANNEL, encodeReliableClientMessage(message))
   }
 
   getStats(): TransportCounters {
@@ -64,8 +62,7 @@ export class GameConnection {
 
   private handleControlPayload(payload: Uint8Array): void {
     try {
-      const line = this.decoder.decode(payload)
-      const message = decodeServerMessage(line)
+      const message = decodeReliableServerMessage(payload)
       this.messageHandlers.forEach((handler) => handler(message))
     } catch (error) {
       this.emitError(error instanceof Error ? error : new Error(String(error)))
