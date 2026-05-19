@@ -1,4 +1,6 @@
-use super::binary::{decode_input, encode_state, BinaryState};
+use super::binary::{
+    decode_client_message, decode_input, encode_server_message, encode_state, BinaryState,
+};
 use super::framing::{
     outbound_frame_queue, write_framed_messages, FramedStreamReader, OutboundFrameSender,
 };
@@ -14,11 +16,10 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
-use tracing::{error, info, warn};
+use tracing::{error, warn};
 use wtransport::Identity;
 
-const CONTROL_CHANNEL: &str = "control";
-const PROBE_CHANNEL: &str = "probe";
+const CONTROL_CHANNEL_ID: u8 = 1;
 
 #[derive(Debug)]
 pub enum GameNetEvent {
@@ -45,7 +46,7 @@ pub struct GameNetworkHost {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct ChannelKey {
     connection_id: ConnectionId,
-    channel: String,
+    channel_id: u8,
 }
 
 pub fn game_net_event_queue() -> (GameNetEventSender, GameNetEventReceiver) {
@@ -111,8 +112,8 @@ impl GameNetworkHost {
     }
 
     pub fn send_message(&self, connection_id: ConnectionId, message: ServerMessage) -> Result<()> {
-        let payload = serde_json::to_vec(&message).context("failed to encode server message")?;
-        self.send_reliable(connection_id, CONTROL_CHANNEL, payload)
+        let payload = encode_server_message(&message).context("failed to encode server message")?;
+        self.send_reliable(connection_id, CONTROL_CHANNEL_ID, payload)
     }
 
     pub fn send_state(&self, connection_id: ConnectionId, snapshot: &RoomSnapshot) -> Result<()> {
@@ -143,12 +144,12 @@ impl GameNetworkHost {
     fn send_reliable(
         &self,
         connection_id: ConnectionId,
-        channel: &str,
+        channel_id: u8,
         payload: Vec<u8>,
     ) -> Result<()> {
         let key = ChannelKey {
             connection_id,
-            channel: channel.to_string(),
+            channel_id,
         };
         let sender = self
             .reliable_channels
@@ -169,7 +170,7 @@ impl GameNetworkHost {
     fn insert_channel(
         &self,
         connection_id: ConnectionId,
-        channel: String,
+        channel_id: u8,
         sender: OutboundFrameSender,
     ) {
         self.reliable_channels
@@ -178,19 +179,19 @@ impl GameNetworkHost {
             .insert(
                 ChannelKey {
                     connection_id,
-                    channel,
+                    channel_id,
                 },
                 sender,
             );
     }
 
-    fn remove_channel(&self, connection_id: ConnectionId, channel: &str) {
+    fn remove_channel(&self, connection_id: ConnectionId, channel_id: u8) {
         self.reliable_channels
             .lock()
             .expect("reliable channel registry mutex poisoned")
             .remove(&ChannelKey {
                 connection_id,
-                channel: channel.to_string(),
+                channel_id,
             });
     }
 
@@ -286,17 +287,17 @@ async fn handle_reliable_stream(
     let Some(channel_payload) = reader.read_frame().await? else {
         return Ok(());
     };
-    let channel = String::from_utf8(channel_payload).context("invalid channel name")?;
+    let channel_id = decode_channel_id(&channel_payload)?;
 
     let (frame_sender, frame_receiver) = outbound_frame_queue();
-    network.insert_channel(connection_id, channel.clone(), frame_sender);
+    network.insert_channel(connection_id, channel_id, frame_sender);
 
-    let writer_channel = channel.clone();
+    let writer_channel_id = channel_id;
     tokio::spawn(async move {
         if let Err(error) = write_framed_messages(send_stream, frame_receiver).await {
             error!(
                 connection_id = connection_id.0,
-                channel = writer_channel,
+                channel_id = writer_channel_id,
                 ?error,
                 "frame write stream failed"
             );
@@ -304,35 +305,26 @@ async fn handle_reliable_stream(
     });
 
     while let Some(payload) = reader.read_frame().await? {
-        handle_reliable_payload(connection_id, &channel, payload, &network, &event_sender);
+        handle_reliable_payload(connection_id, channel_id, payload, &network, &event_sender);
     }
 
-    network.remove_channel(connection_id, &channel);
+    network.remove_channel(connection_id, channel_id);
     Ok(())
 }
 
 fn handle_reliable_payload(
     connection_id: ConnectionId,
-    channel: &str,
+    channel_id: u8,
     payload: Vec<u8>,
     network: &GameNetworkHost,
     event_sender: &GameNetEventSender,
 ) {
-    match channel {
-        CONTROL_CHANNEL => handle_control_payload(connection_id, payload, network, event_sender),
-        PROBE_CHANNEL => {
-            info!(
-                connection_id = connection_id.0,
-                channel,
-                bytes = payload.len(),
-                payload = %String::from_utf8_lossy(&payload),
-                "received reliable probe frame"
-            );
-        }
+    match channel_id {
+        CONTROL_CHANNEL_ID => handle_control_payload(connection_id, payload, network, event_sender),
         _ => {
             warn!(
                 connection_id = connection_id.0,
-                channel, "ignoring unknown reliable channel"
+                channel_id, "ignoring unknown reliable channel"
             );
         }
     }
@@ -344,12 +336,7 @@ fn handle_control_payload(
     network: &GameNetworkHost,
     event_sender: &GameNetEventSender,
 ) {
-    let raw = String::from_utf8_lossy(&payload).trim().to_owned();
-    if raw.is_empty() {
-        return;
-    }
-
-    match serde_json::from_str::<ClientMessage>(&raw) {
+    match decode_client_message(&payload) {
         Ok(message) => {
             let _ = event_sender.send(GameNetEvent::Message {
                 connection_id,
@@ -371,5 +358,32 @@ fn handle_control_payload(
                 );
             }
         }
+    }
+}
+
+fn decode_channel_id(payload: &[u8]) -> Result<u8> {
+    if payload.len() != 1 {
+        anyhow::bail!("invalid reliable channel id size: {}", payload.len());
+    }
+
+    Ok(payload[0])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_control_channel_id() {
+        assert_eq!(
+            decode_channel_id(&[CONTROL_CHANNEL_ID]).unwrap(),
+            CONTROL_CHANNEL_ID
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_channel_id_payload() {
+        assert!(decode_channel_id(&[]).is_err());
+        assert!(decode_channel_id(&[CONTROL_CHANNEL_ID, 0]).is_err());
     }
 }

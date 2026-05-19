@@ -1,16 +1,11 @@
-use serde::{Deserialize, Serialize};
-
-#[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[derive(Debug, PartialEq)]
 pub enum ClientMessage {
     Join,
     Restart,
     Ping {
-        #[serde(rename = "pingSeq")]
         ping_seq: u64,
     },
     Input {
-        #[serde(rename = "inputSeq")]
         input_seq: u64,
         up: bool,
         down: bool,
@@ -19,27 +14,16 @@ pub enum ClientMessage {
     },
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[derive(Clone, Debug, PartialEq)]
 pub enum ServerMessage {
-    Welcome {
-        #[serde(rename = "playerId")]
-        player_id: u64,
-    },
+    Welcome { player_id: u64 },
     Restarted,
-    Pong {
-        #[serde(rename = "pingSeq")]
-        ping_seq: u64,
-    },
-    Error {
-        message: String,
-    },
+    Pong { ping_seq: u64 },
+    Error { message: String },
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub struct PlayerSnapshot {
-    #[serde(rename = "playerId")]
     pub player_id: u64,
     pub x: f32,
     pub y: f32,
@@ -49,10 +33,8 @@ pub struct PlayerSnapshot {
     pub vz: f32,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Clone, Debug)]
 pub struct BoxSnapshot {
-    #[serde(rename = "boxId")]
     pub box_id: u64,
     pub x: f32,
     pub y: f32,

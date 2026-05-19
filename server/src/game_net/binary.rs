@@ -1,4 +1,4 @@
-use crate::game::protocol::{BoxSnapshot, PlayerSnapshot};
+use crate::game::protocol::{BoxSnapshot, ClientMessage, PlayerSnapshot, ServerMessage};
 use crate::game::room::PlayerInput;
 use anyhow::{bail, ensure, Result};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -6,6 +6,13 @@ use tracing::warn;
 
 const TYPE_INPUT: u8 = 1;
 const TYPE_STATE: u8 = 2;
+const TYPE_JOIN: u8 = 3;
+const TYPE_RESTART: u8 = 4;
+const TYPE_PING: u8 = 5;
+const TYPE_WELCOME: u8 = 6;
+const TYPE_RESTARTED: u8 = 7;
+const TYPE_PONG: u8 = 8;
+const TYPE_ERROR: u8 = 9;
 const INPUT_BYTES: usize = 6;
 const STATE_HEADER_BYTES: usize = 11;
 const PLAYER_BYTES: usize = 13;
@@ -46,6 +53,130 @@ pub fn decode_input(payload: &[u8]) -> Result<BinaryInput> {
         input_seq: u32::from_be_bytes(payload[1..5].try_into()?),
         input: decode_buttons(payload[5]),
     })
+}
+
+pub fn decode_client_message(payload: &[u8]) -> Result<ClientMessage> {
+    ensure!(!payload.is_empty(), "invalid reliable message size: 0");
+
+    match payload[0] {
+        TYPE_JOIN => {
+            ensure!(
+                payload.len() == 1,
+                "invalid join message size: {}",
+                payload.len()
+            );
+            Ok(ClientMessage::Join)
+        }
+        TYPE_RESTART => {
+            ensure!(
+                payload.len() == 1,
+                "invalid restart message size: {}",
+                payload.len()
+            );
+            Ok(ClientMessage::Restart)
+        }
+        TYPE_PING => {
+            ensure!(
+                payload.len() == 5,
+                "invalid ping message size: {}",
+                payload.len()
+            );
+            Ok(ClientMessage::Ping {
+                ping_seq: u32::from_be_bytes(payload[1..5].try_into()?) as u64,
+            })
+        }
+        message_type => bail!("unexpected reliable message type: {message_type}"),
+    }
+}
+
+pub fn encode_server_message(message: &ServerMessage) -> Result<Vec<u8>> {
+    match message {
+        ServerMessage::Welcome { player_id } => {
+            let mut payload = Vec::with_capacity(2);
+            payload.push(TYPE_WELCOME);
+            write_u8(&mut payload, *player_id, "player id")?;
+            Ok(payload)
+        }
+        ServerMessage::Restarted => Ok(vec![TYPE_RESTARTED]),
+        ServerMessage::Pong { ping_seq } => {
+            ensure!(
+                *ping_seq <= u32::MAX as u64,
+                "ping seq exceeds binary protocol range: {}",
+                ping_seq
+            );
+            let mut payload = Vec::with_capacity(5);
+            payload.push(TYPE_PONG);
+            payload.extend_from_slice(&(*ping_seq as u32).to_be_bytes());
+            Ok(payload)
+        }
+        ServerMessage::Error { message } => {
+            let bytes = message.as_bytes();
+            ensure!(
+                bytes.len() <= u16::MAX as usize,
+                "error message exceeds binary protocol range: {}",
+                bytes.len()
+            );
+            let mut payload = Vec::with_capacity(3 + bytes.len());
+            payload.push(TYPE_ERROR);
+            payload.extend_from_slice(&(bytes.len() as u16).to_be_bytes());
+            payload.extend_from_slice(bytes);
+            Ok(payload)
+        }
+    }
+}
+
+#[cfg(test)]
+fn decode_server_message(payload: &[u8]) -> Result<ServerMessage> {
+    ensure!(!payload.is_empty(), "invalid reliable message size: 0");
+
+    match payload[0] {
+        TYPE_WELCOME => {
+            ensure!(
+                payload.len() == 2,
+                "invalid welcome message size: {}",
+                payload.len()
+            );
+            Ok(ServerMessage::Welcome {
+                player_id: payload[1] as u64,
+            })
+        }
+        TYPE_RESTARTED => {
+            ensure!(
+                payload.len() == 1,
+                "invalid restarted message size: {}",
+                payload.len()
+            );
+            Ok(ServerMessage::Restarted)
+        }
+        TYPE_PONG => {
+            ensure!(
+                payload.len() == 5,
+                "invalid pong message size: {}",
+                payload.len()
+            );
+            Ok(ServerMessage::Pong {
+                ping_seq: u32::from_be_bytes(payload[1..5].try_into()?) as u64,
+            })
+        }
+        TYPE_ERROR => {
+            ensure!(
+                payload.len() >= 3,
+                "invalid error message size: {}",
+                payload.len()
+            );
+            let length = u16::from_be_bytes(payload[1..3].try_into()?) as usize;
+            ensure!(
+                payload.len() == 3 + length,
+                "invalid error message size: {}, expected {}",
+                payload.len(),
+                3 + length
+            );
+            Ok(ServerMessage::Error {
+                message: String::from_utf8(payload[3..].to_vec())?,
+            })
+        }
+        message_type => bail!("unexpected reliable message type: {message_type}"),
+    }
 }
 
 pub fn encode_state(state: BinaryState<'_>) -> Result<Vec<u8>> {
@@ -205,6 +336,55 @@ mod tests {
     }
 
     #[test]
+    fn reliable_client_messages_decode() {
+        assert_eq!(
+            decode_client_message(&[TYPE_JOIN]).unwrap(),
+            ClientMessage::Join
+        );
+        assert_eq!(
+            decode_client_message(&[TYPE_RESTART]).unwrap(),
+            ClientMessage::Restart
+        );
+        assert_eq!(
+            decode_client_message(&[TYPE_PING, 0, 0, 0, 42]).unwrap(),
+            ClientMessage::Ping { ping_seq: 42 }
+        );
+    }
+
+    #[test]
+    fn reliable_server_messages_roundtrip() {
+        for message in [
+            ServerMessage::Welcome { player_id: 7 },
+            ServerMessage::Restarted,
+            ServerMessage::Pong { ping_seq: 42 },
+            ServerMessage::Error {
+                message: "invalid message".to_string(),
+            },
+        ] {
+            let encoded = encode_server_message(&message).unwrap();
+            assert_eq!(decode_server_message(&encoded).unwrap(), message);
+        }
+    }
+
+    #[test]
+    fn rejects_bad_reliable_messages() {
+        assert!(decode_client_message(&[]).is_err());
+        assert!(decode_client_message(&[TYPE_JOIN, 0]).is_err());
+        assert!(decode_client_message(&[TYPE_PING, 0, 0, 1]).is_err());
+        assert!(decode_client_message(&[TYPE_WELCOME, 1]).is_err());
+        assert!(decode_server_message(&[TYPE_ERROR, 0, 4, b'o', b'o']).is_err());
+        assert!(encode_server_message(&ServerMessage::Welcome { player_id: 256 }).is_err());
+        assert!(encode_server_message(&ServerMessage::Pong {
+            ping_seq: u32::MAX as u64 + 1
+        })
+        .is_err());
+        assert!(encode_server_message(&ServerMessage::Error {
+            message: "x".repeat(u16::MAX as usize + 1),
+        })
+        .is_err());
+    }
+
+    #[test]
     fn state_encoding_uses_expected_size_and_quantization() {
         let players = vec![PlayerSnapshot {
             player_id: 7,
@@ -257,7 +437,10 @@ mod tests {
         assert_eq!(i16::from_be_bytes(encoded[38..40].try_into().unwrap()), 25);
         assert_eq!(i16::from_be_bytes(encoded[42..44].try_into().unwrap()), -50);
         assert_eq!(i16::from_be_bytes(encoded[44..46].try_into().unwrap()), 75);
-        assert_eq!(i16::from_be_bytes(encoded[46..48].try_into().unwrap()), -125);
+        assert_eq!(
+            i16::from_be_bytes(encoded[46..48].try_into().unwrap()),
+            -125
+        );
         assert_eq!(i16::from_be_bytes(encoded[48..50].try_into().unwrap()), 150);
     }
 }

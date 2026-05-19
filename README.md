@@ -6,7 +6,7 @@ A browser + Rust multiplayer physics demo: server-authoritative Rapier simulatio
 
 - **Slope arena** — tilted runway with side walls; players spawn at the bottom and move toward **+Z** (uphill).
 - **Rolling hazards** — server-owned dynamic boxes spawn near the top, roll downhill, and **recycle** back to the launch line when they pass the bottom `recycleZ`.
-- **Networking** — WebTransport with a named reliable `control` stream (JSON) plus unreliable datagrams (binary `input` / `state`).
+- **Networking** — WebTransport with a binary reliable control stream plus binary unreliable datagrams for `input` / `state`.
 - **Local player** — client Rapier world with input history, reconciliation on authoritative snapshots, and soft correction when prediction drifts.
 - **Remote entities** — `PlayerExtrapolator` and `BoxExtrapolator` advance the latest snapshot using linear/angular velocity (not the interpolation buffer used for rendering).
 - **Rendering** — fixed third-person camera from `game.json`; Three.js slope meshes and colliders shared between client prediction and visuals.
@@ -164,28 +164,35 @@ The production client build leaves `VITE_CERTIFICATE_HASH` empty because a publi
 
 ## Message Protocol
 
-The client opens a named reliable `control` channel over a bidirectional WebTransport stream. Each stream starts with a length-prefixed UTF-8 channel-name frame, then carries length-prefixed payload frames. Low-rate control messages are JSON:
-
-```ts
-type ClientMessage =
-  | { type: 'join' }
-  | { type: 'restart' }
-  | { type: 'ping'; pingSeq: number }
-```
-
-Server messages:
-
-```ts
-type ServerMessage =
-  | { type: 'welcome'; playerId: number }
-  | { type: 'restarted' }
-  | { type: 'pong'; pingSeq: number }
-  | { type: 'error'; message: string }
-```
-
-High-rate `input` and `state` messages use WebTransport datagrams with a compact big-endian binary format. The first byte is the message type:
+The client opens a reliable `control` channel over a bidirectional WebTransport stream. Each stream starts with a length-prefixed one-byte channel id frame (`control = 1`), then carries length-prefixed binary payload frames. WebTransport datagrams carry binary `input` and `state` messages. All multi-byte numbers are big-endian, and the first byte of every game message is the message type:
 
 ```text
+join reliable payload, 1 byte:
+  u8  type = 3
+
+restart reliable payload, 1 byte:
+  u8  type = 4
+
+ping reliable payload, 5 bytes:
+  u8  type = 5
+  u32 pingSeq
+
+welcome reliable payload, 2 bytes:
+  u8  type = 6
+  u8  playerId
+
+restarted reliable payload, 1 byte:
+  u8  type = 7
+
+pong reliable payload, 5 bytes:
+  u8  type = 8
+  u32 pingSeq
+
+error reliable payload, 3-byte header + UTF-8 text:
+  u8  type = 9
+  u16 byteLength
+  u8[] message
+
 input datagram, 6 bytes:
   u8  type = 1
   u32 inputSeq
@@ -198,13 +205,10 @@ state datagram, 11-byte header + players + changed boxes:
   u8  playerCount
   u8  changedBoxCount
 
-player, 26 bytes:
+player, 13 bytes:
   u8  playerId
   i16 x, y, z
-  u8  largestQuatIndex
-  i16 qA, qB, qC
   i16 vx, vy, vz
-  i16 wx, wy, wz
 
 box, 26 bytes:
   u8  boxId
