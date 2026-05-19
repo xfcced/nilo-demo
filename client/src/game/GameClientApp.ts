@@ -1,24 +1,23 @@
 import { GameLoop } from '../engine/GameLoop'
 import { KeyboardInput, type MovementDirection } from '../engine/KeyboardInput'
-import type { TransportCounters } from '../engine/WebTransportClient'
 import { type AppElements, getAppElements } from './appElements'
 import { ArenaScene } from './ArenaScene'
 import { defaultWebTransportUrl, FIXED_STEP_MS, gameConfig } from './config'
+import { DebugTelemetry, type DebugOptions } from './debug/DebugTelemetry'
 import { GameConnection } from './net/GameConnection'
 import { StateSynchronizer } from './sync/StateSynchronizer'
-import { DebugPanel, type DebugOptions } from './ui/DebugPanel'
 
 const PING_SEND_MS = 1000
-const FPS_SAMPLE_MS = 500
-const NETWORK_STATS_SAMPLE_MS = 1000
 
 export class GameClientApp {
-  private debugPanel = new DebugPanel()
   private arena: ArenaScene
   private input = new KeyboardInput()
   private serverConnection = new GameConnection()
   private stateSync = new StateSynchronizer()
-  private debugOptions: DebugOptions = this.debugPanel.debugOptions()
+  private debug = new DebugTelemetry({
+    getTransportStats: () => this.serverConnection.getStats(),
+  })
+  private debugOptions: DebugOptions = this.debug.debugOptions()
   private gameLoop: GameLoop
 
   private inputSeq = 0
@@ -27,10 +26,6 @@ export class GameClientApp {
   private pingElapsedMs = PING_SEND_MS
   private pingSeq = 0
   private pendingPings = new Map<number, number>()
-  private fpsElapsedMs = 0
-  private fpsFrameCount = 0
-  private networkStatsElapsedMs = 0
-  private previousNetworkCounters: TransportCounters | null = null
 
   constructor(private elements: AppElements = getAppElements()) {
     this.elements.urlInput.value = defaultWebTransportUrl()
@@ -59,11 +54,7 @@ export class GameClientApp {
     this.bindConnectionEvents()
     this.bindUiEvents()
     this.gameLoop.start()
-    this.debugPanel.setConnection('disconnected')
-    this.debugPanel.setFps(null)
-    this.debugPanel.setNetworkStats(null)
-    this.debugPanel.setPredictionMetrics(null)
-    this.debugPanel.resetStateIntervalChart()
+    this.debug.start()
   }
 
   private bindConnectionEvents(): void {
@@ -71,15 +62,13 @@ export class GameClientApp {
       if (message.type === 'welcome') {
         this.localPlayerId = message.playerId
         this.arena.setLocalPlayerId(message.playerId)
-        this.debugPanel.setPlayerId(message.playerId)
-        this.debugPanel.setRestartEnabled(this.connected)
-        this.debugPanel.log(`joined as player ${message.playerId}`)
+        this.debug.onWelcome(message.playerId, this.connected)
         return
       }
 
       if (message.type === 'restarted') {
         this.resetGameplayState()
-        this.debugPanel.log('game restarted')
+        this.debug.onRestarted()
         return
       }
 
@@ -87,9 +76,9 @@ export class GameClientApp {
         const sentAt = this.pendingPings.get(message.pingSeq)
         if (sentAt !== undefined) {
           this.pendingPings.delete(message.pingSeq)
-          this.debugPanel.setRtt(performance.now() - sentAt)
+          this.debug.onPong(performance.now() - sentAt)
         } else {
-          this.debugPanel.log(`ignored pong for unknown ping ${message.pingSeq}`)
+          this.debug.onUnknownPong(message.pingSeq)
         }
         return
       }
@@ -101,33 +90,26 @@ export class GameClientApp {
           return
         }
 
-        this.debugPanel.setServerTick(message.serverTick)
-        this.debugPanel.recordStateReceived(receivedAtMs)
-        this.debugPanel.recordLossSample(message.serverTick, message.lastReceivedInputSeq)
-        if (result.predictionMetrics) {
-          this.debugPanel.setPredictionMetrics(result.predictionMetrics)
-        }
+        this.debug.onStateAccepted(message, result.predictionMetrics, receivedAtMs)
         return
       }
 
-      this.debugPanel.log(`server error: ${message.message}`)
+      this.debug.onServerError(message.message)
     })
 
     this.serverConnection.onClose((reason) => {
       this.resetSessionState()
-      this.debugPanel.setConnection('disconnected')
-      this.debugPanel.log(`connection closed: ${reason}`)
+      this.debug.onDisconnected(reason)
       this.setButtons(false)
     })
 
     this.serverConnection.onError((error) => {
-      this.debugPanel.log(`message error: ${error.message}`)
+      this.debug.onMessageError(error)
     })
   }
 
   private render(renderDeltaMs: number, fixedStepAlpha: number): void {
-    this.updateFps(renderDeltaMs)
-    this.updateNetworkStats(renderDeltaMs)
+    this.debug.onFrame(renderDeltaMs, this.connected)
     const nowMs = performance.now()
     const renderDeltaSeconds = renderDeltaMs / 1000
     const renderState = this.stateSync.sampleRenderState(nowMs, this.localPlayerId, fixedStepAlpha, renderDeltaSeconds)
@@ -163,11 +145,11 @@ export class GameClientApp {
       void this.disconnect()
     })
 
-    this.debugPanel.onRestart(() => {
+    this.debug.onRestart(() => {
       void this.restart()
     })
 
-    this.debugPanel.onDebugOptionsChanged((options) => {
+    this.debug.onDebugOptionsChanged((options) => {
       this.debugOptions = options
       this.stateSync.setModes(options.syncModes)
       if (!options.predictionDebug) {
@@ -212,27 +194,20 @@ export class GameClientApp {
 
   private async connect(): Promise<void> {
     try {
-      this.debugPanel.setConnection('connecting')
+      this.debug.onConnectStart()
       this.setButtons(false)
-      this.debugPanel.log('connecting...')
 
       await this.serverConnection.connect(this.elements.urlInput.value.trim(), this.elements.hashInput.value.trim())
-      this.resetNetworkStatsSample()
       await this.serverConnection.send({ type: 'join' })
 
       this.connected = true
       this.inputSeq = 0
       this.pingElapsedMs = PING_SEND_MS
-      this.debugPanel.setConnection('connected')
-      this.debugPanel.resetStateIntervalChart()
-      this.debugPanel.resetLossChart()
+      this.debug.onConnected()
       this.setButtons(true)
     } catch (error) {
       this.connected = false
-      this.debugPanel.setConnection('disconnected')
-      this.debugPanel.log(`connect failed: ${String(error)}`)
-      this.previousNetworkCounters = null
-      this.networkStatsElapsedMs = 0
+      this.debug.onConnectFailed(error)
       this.setButtons(false)
     }
   }
@@ -240,9 +215,7 @@ export class GameClientApp {
   private async disconnect(): Promise<void> {
     await this.serverConnection.close()
     this.resetSessionState()
-    this.debugPanel.setConnection('disconnected')
-    this.debugPanel.setPlayerId(null)
-    this.debugPanel.setRtt(null)
+    this.debug.onManualDisconnect()
     this.setButtons(false)
   }
 
@@ -251,66 +224,12 @@ export class GameClientApp {
       return
     }
 
-    this.debugPanel.setRestartEnabled(false)
+    this.debug.setRestartEnabled(false)
     try {
       await this.serverConnection.send({ type: 'restart' })
     } catch (error) {
-      if (this.connected) {
-        this.debugPanel.log(`restart failed: ${String(error)}`)
-      }
-      this.debugPanel.setRestartEnabled(true)
+      this.debug.onRestartFailed(error, this.connected)
     }
-  }
-
-  private updateFps(renderDeltaMs: number): void {
-    this.fpsElapsedMs += renderDeltaMs
-    this.fpsFrameCount += 1
-
-    if (this.fpsElapsedMs < FPS_SAMPLE_MS) {
-      return
-    }
-
-    this.debugPanel.setFps((this.fpsFrameCount * 1000) / this.fpsElapsedMs)
-    this.fpsElapsedMs = 0
-    this.fpsFrameCount = 0
-  }
-
-  private updateNetworkStats(renderDeltaMs: number): void {
-    if (!this.connected || !this.previousNetworkCounters) {
-      return
-    }
-
-    this.networkStatsElapsedMs += renderDeltaMs
-    if (this.networkStatsElapsedMs < NETWORK_STATS_SAMPLE_MS) {
-      return
-    }
-
-    const current = this.serverConnection.getStats()
-    const sampleSeconds = this.networkStatsElapsedMs / 1000
-    this.debugPanel.setNetworkStats({
-      rxMessages: current.rxMessages,
-      txMessages: current.txMessages,
-      rxMessagesPerSec: (current.rxMessages - this.previousNetworkCounters.rxMessages) / sampleSeconds,
-      txMessagesPerSec: (current.txMessages - this.previousNetworkCounters.txMessages) / sampleSeconds,
-      rxBytesPerSec: (current.rxBytes - this.previousNetworkCounters.rxBytes) / sampleSeconds,
-      txBytesPerSec: (current.txBytes - this.previousNetworkCounters.txBytes) / sampleSeconds,
-    })
-
-    this.previousNetworkCounters = current
-    this.networkStatsElapsedMs = 0
-  }
-
-  private resetNetworkStatsSample(): void {
-    this.previousNetworkCounters = this.serverConnection.getStats()
-    this.networkStatsElapsedMs = 0
-    this.debugPanel.setNetworkStats({
-      rxMessages: this.previousNetworkCounters.rxMessages,
-      txMessages: this.previousNetworkCounters.txMessages,
-      rxMessagesPerSec: 0,
-      txMessagesPerSec: 0,
-      rxBytesPerSec: 0,
-      txBytesPerSec: 0,
-    })
   }
 
   private sendPing(): void {
@@ -320,9 +239,7 @@ export class GameClientApp {
 
     void this.serverConnection.send({ type: 'ping', pingSeq }).catch((error: unknown) => {
       this.pendingPings.delete(pingSeq)
-      if (this.connected) {
-        this.debugPanel.log(`ping failed: ${String(error)}`)
-      }
+      this.debug.logSendFailure('ping', error, this.connected)
     })
   }
 
@@ -332,7 +249,7 @@ export class GameClientApp {
     }
 
     const movement = this.input.currentMovement()
-    this.debugPanel.setPredictionMetrics(this.stateSync.pushLocalInput(movement))
+    this.debug.onPredictionMetrics(this.stateSync.pushLocalInput(movement))
 
     void this.serverConnection
       .send({
@@ -341,9 +258,7 @@ export class GameClientApp {
         ...movement,
       })
       .catch((error: unknown) => {
-        if (this.connected) {
-          this.debugPanel.log(`input failed: ${String(error)}`)
-        }
+        this.debug.logSendFailure('input', error, this.connected)
       })
   }
 
@@ -364,17 +279,13 @@ export class GameClientApp {
     this.arena.clearLocalPredictionDebug()
     this.arena.clearInterpolationDebug()
     this.stateSync.reset()
-    this.debugPanel.setServerTick(null)
-    this.debugPanel.setPredictionMetrics(null)
-    this.debugPanel.resetStateIntervalChart()
-    this.debugPanel.resetLossChart()
-    this.debugPanel.setRestartEnabled(this.connected && this.localPlayerId !== null)
+    this.debug.onGameplayReset(this.connected, this.localPlayerId)
   }
 
   private setButtons(connected: boolean): void {
     this.elements.connectButton.disabled = connected
     this.elements.disconnectButton.disabled = !connected
-    this.debugPanel.setRestartEnabled(connected && this.localPlayerId !== null)
+    this.debug.setRestartEnabled(connected && this.localPlayerId !== null)
   }
 }
 
