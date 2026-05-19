@@ -1,4 +1,6 @@
 import { gameConfig } from '../config'
+import type { PredictionMetrics } from '../sync/LocalPlayerPredictor'
+import { defaultSyncModes, type SyncModes } from '../sync/StateSynchronizer'
 
 export type ConnectionState = 'disconnected' | 'connecting' | 'connected'
 
@@ -11,16 +13,10 @@ export type NetworkStats = {
   txBytesPerSec: number
 }
 
-export type PredictionMetrics = {
-  pendingInputCount: number
-  lastReceivedInputSeq: number
-  predictionError: number
-  correctionCount: number
-}
-
 export type DebugOptions = {
   predictionDebug: boolean
   interpolationDebug: boolean
+  syncModes: SyncModes
 }
 
 const STATE_ARRIVAL_WINDOW_MS = 4000
@@ -38,6 +34,9 @@ type DebugPanelElements = {
   restartButton: HTMLButtonElement
   predictionDebugToggle: HTMLInputElement
   interpolationDebugToggle: HTMLInputElement
+  localPlayerSyncMode: HTMLSelectElement
+  remotePlayersSyncMode: HTMLSelectElement
+  boxesSyncMode: HTMLSelectElement
   connectionValue: HTMLElement
   playerIdValue: HTMLElement
   rttValue: HTMLElement
@@ -76,6 +75,9 @@ export class DebugPanel {
       restartButton: getElement('restartButton'),
       predictionDebugToggle: getElement('predictionDebugToggle'),
       interpolationDebugToggle: getElement('interpolationDebugToggle'),
+      localPlayerSyncMode: getElement('localPlayerSyncMode'),
+      remotePlayersSyncMode: getElement('remotePlayersSyncMode'),
+      boxesSyncMode: getElement('boxesSyncMode'),
       connectionValue: getElement('connectionValue'),
       playerIdValue: getElement('playerIdValue'),
       rttValue: getElement('rttValue'),
@@ -114,12 +116,26 @@ export class DebugPanel {
     const notify = (): void => handler(this.debugOptions())
     this.elements.predictionDebugToggle.addEventListener('change', notify)
     this.elements.interpolationDebugToggle.addEventListener('change', notify)
+    this.elements.localPlayerSyncMode.addEventListener('change', notify)
+    this.elements.remotePlayersSyncMode.addEventListener('change', notify)
+    this.elements.boxesSyncMode.addEventListener('change', notify)
   }
 
   debugOptions(): DebugOptions {
     return {
       predictionDebug: this.elements.predictionDebugToggle.checked,
       interpolationDebug: this.elements.interpolationDebugToggle.checked,
+      syncModes: {
+        localPlayer:
+          this.elements.localPlayerSyncMode.value === 'interpolation'
+            ? 'interpolation'
+            : defaultSyncModes.localPlayer,
+        remotePlayers:
+          this.elements.remotePlayersSyncMode.value === 'interpolation'
+            ? 'interpolation'
+            : defaultSyncModes.remotePlayers,
+        boxes: this.elements.boxesSyncMode.value === 'interpolation' ? 'interpolation' : defaultSyncModes.boxes,
+      },
     }
   }
 

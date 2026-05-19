@@ -1,10 +1,11 @@
 import * as THREE from 'three'
 import { gameConfig } from '../config'
 import type { BoxSnapshot, PlayerSnapshot, ServerMessage } from '../net/protocol'
-import type { RenderBox, RenderPlayer, RenderWorldState } from '../renderState'
+import type { RenderBox, RenderPlayer } from '../renderState'
 
 const SERVER_TICK_MS = 1000 / gameConfig.simulation.tickRate
 const MAX_SAMPLES_PER_ENTITY = Math.max(2, Math.ceil(gameConfig.interpolation.delayTicks) + 1)
+const BOX_TELEPORT_DISTANCE = gameConfig.slope.halfZ
 
 type StateMessage = Extract<ServerMessage, { type: 'state' }>
 
@@ -14,7 +15,7 @@ export type PlayerSample = PlayerSnapshot & {
 
 export type BoxSample = BoxSnapshot & {
   serverTick: number
-  synthetic: boolean
+  teleported: boolean
 }
 
 export type InterpolationDebugPlayerSample = PlayerSample & {
@@ -38,11 +39,7 @@ export class SnapshotInterpolator {
   private latestSnapshot: StateMessage | null = null
   private latestSnapshotReceivedAtMs = 0
 
-  pushSnapshot(snapshot: StateMessage, receivedAtMs: number): boolean {
-    if (this.latestSnapshot && snapshot.serverTick <= this.latestSnapshot.serverTick) {
-      return false
-    }
-
+  pushSnapshot(snapshot: StateMessage, receivedAtMs: number): void {
     this.latestSnapshot = snapshot
     this.latestSnapshotReceivedAtMs = receivedAtMs
 
@@ -51,36 +48,36 @@ export class SnapshotInterpolator {
     }
 
     for (const box of snapshot.boxes) {
-      this.pushBoxSample(box.boxId, { ...box, serverTick: snapshot.serverTick, synthetic: false })
+      this.pushBoxSample(box.boxId, { ...box, serverTick: snapshot.serverTick, teleported: false })
     }
-
-    return true
   }
 
-  sample(nowMs: number, localPlayerId: number | null, localPlayerOverride: RenderPlayer | null = null): RenderWorldState {
+  sampleLocalPlayer(nowMs: number, localPlayerId: number | null): RenderPlayer | null {
+    if (localPlayerId === null || !this.latestSnapshot) {
+      return null
+    }
+
+    const samples = this.playerSamples.get(localPlayerId)
+    if (!samples) {
+      return null
+    }
+
+    const renderTick = this.renderTick(nowMs)
+    if (isExpired(samples, renderTick)) {
+      this.playerSamples.delete(localPlayerId)
+      return null
+    }
+
+    return samplePlayer(samples, renderTick, true)
+  }
+
+  sampleRemotePlayers(nowMs: number, localPlayerId: number | null): RenderPlayer[] {
     if (!this.latestSnapshot) {
-      return { players: [], boxes: [] }
+      return []
     }
 
-    const elapsedTicks = (nowMs - this.latestSnapshotReceivedAtMs) / SERVER_TICK_MS
-    const renderTick = this.latestSnapshot.serverTick + elapsedTicks - gameConfig.interpolation.delayTicks
+    const renderTick = this.renderTick(nowMs)
     const players: RenderPlayer[] = []
-    const boxes: RenderBox[] = []
-
-    if (localPlayerOverride) {
-      players.push(localPlayerOverride)
-    } else if (localPlayerId !== null) {
-      const localPlayer = this.latestSnapshot.players.find((player) => player.playerId === localPlayerId)
-      if (localPlayer) {
-        players.push({
-          playerId: localPlayer.playerId,
-          isLocal: true,
-          x: localPlayer.x,
-          y: localPlayer.y,
-          z: localPlayer.z,
-        })
-      }
-    }
 
     for (const [playerId, samples] of this.playerSamples) {
       if (playerId === localPlayerId) {
@@ -92,11 +89,22 @@ export class SnapshotInterpolator {
         continue
       }
 
-      const sample = samplePlayer(samples, renderTick)
+      const sample = samplePlayer(samples, renderTick, false)
       if (sample) {
         players.push(sample)
       }
     }
+
+    return players
+  }
+
+  sampleBoxes(nowMs: number): RenderBox[] {
+    if (!this.latestSnapshot) {
+      return []
+    }
+
+    const renderTick = this.renderTick(nowMs)
+    const boxes: RenderBox[] = []
 
     for (const [boxId, samples] of this.boxSamples) {
       const sample = sampleBox(samples, renderTick)
@@ -105,15 +113,19 @@ export class SnapshotInterpolator {
       }
     }
 
-    return { players, boxes }
+    return boxes
   }
 
-  debugSamples(localPlayerId: number | null): InterpolationDebugState {
+  debugSamples(
+    localPlayerId: number | null,
+    options: { includeLocalPlayer: boolean; includeRemotePlayers: boolean; includeBoxes: boolean },
+  ): InterpolationDebugState {
     const players: InterpolationDebugPlayerSample[] = []
     const boxes: InterpolationDebugBoxSample[] = []
 
     for (const [playerId, samples] of this.playerSamples) {
-      if (playerId === localPlayerId) {
+      const isLocalPlayer = playerId === localPlayerId
+      if ((isLocalPlayer && !options.includeLocalPlayer) || (!isLocalPlayer && !options.includeRemotePlayers)) {
         continue
       }
 
@@ -122,11 +134,12 @@ export class SnapshotInterpolator {
       })
     }
 
-    for (const samples of this.boxSamples.values()) {
-      const authoritativeSamples = samples.filter((sample) => !sample.synthetic)
-      authoritativeSamples.forEach((sample, sampleIndex) => {
-        boxes.push({ ...sample, sampleIndex, sampleCount: authoritativeSamples.length })
-      })
+    if (options.includeBoxes) {
+      for (const samples of this.boxSamples.values()) {
+        samples.forEach((sample, sampleIndex) => {
+          boxes.push({ ...sample, sampleIndex, sampleCount: samples.length })
+        })
+      }
     }
 
     return { players, boxes }
@@ -148,28 +161,27 @@ export class SnapshotInterpolator {
 
   private pushBoxSample(boxId: number, sample: BoxSample): void {
     const samples = this.boxSamples.get(boxId) ?? []
-    appendBoxHoldSamples(samples, sample.serverTick)
-    samples.push(sample)
+    samples.push({ ...sample, teleported: isBoxTeleport(samples.at(-1), sample) })
     trimSamples(samples)
     this.boxSamples.set(boxId, samples)
   }
+
+  private renderTick(nowMs: number): number {
+    if (!this.latestSnapshot) {
+      return 0
+    }
+
+    const elapsedTicks = (nowMs - this.latestSnapshotReceivedAtMs) / SERVER_TICK_MS
+    return this.latestSnapshot.serverTick + elapsedTicks - gameConfig.interpolation.delayTicks
+  }
 }
 
-function appendBoxHoldSamples(samples: BoxSample[], incomingTick: number): void {
-  const latest = samples.at(-1)
-  if (!latest) {
-    return
+function isBoxTeleport(previous: BoxSample | undefined, next: BoxSample): boolean {
+  if (!previous) {
+    return false
   }
 
-  const gap = incomingTick - latest.serverTick
-  if (gap <= 1) {
-    return
-  }
-
-  const firstHoldTick = Math.max(latest.serverTick + 1, incomingTick - Math.ceil(gameConfig.interpolation.delayTicks))
-  for (let serverTick = firstHoldTick; serverTick < incomingTick; serverTick += 1) {
-    samples.push({ ...latest, serverTick, synthetic: true })
-  }
+  return distance(previous, next) > BOX_TELEPORT_DISTANCE
 }
 
 function trimSamples<T>(samples: T[]): void {
@@ -183,7 +195,7 @@ function isExpired(samples: Array<{ serverTick: number }>, renderTick: number): 
   return !latest || renderTick - latest.serverTick > gameConfig.interpolation.entityExpireTicks
 }
 
-function samplePlayer(samples: PlayerSample[], renderTick: number): RenderPlayer | null {
+function samplePlayer(samples: PlayerSample[], renderTick: number, isLocal: boolean): RenderPlayer | null {
   const pair = findSamplePair(samples, renderTick)
   if (!pair) {
     return null
@@ -193,7 +205,7 @@ function samplePlayer(samples: PlayerSample[], renderTick: number): RenderPlayer
 
   return {
     playerId: before.playerId,
-    isLocal: false,
+    isLocal,
     x: lerp(before.x, after.x, sampleAlpha),
     y: lerp(before.y, after.y, sampleAlpha),
     z: lerp(before.z, after.z, sampleAlpha),
@@ -201,7 +213,7 @@ function samplePlayer(samples: PlayerSample[], renderTick: number): RenderPlayer
 }
 
 function sampleBox(samples: BoxSample[], renderTick: number): RenderBox | null {
-  const pair = findSamplePair(samples, renderTick)
+  const pair = findBoxSamplePair(samples, renderTick)
   if (!pair) {
     return null
   }
@@ -221,6 +233,41 @@ function sampleBox(samples: BoxSample[], renderTick: number): RenderBox | null {
     qz: rotation.z,
     qw: rotation.w,
   }
+}
+
+function findBoxSamplePair(samples: BoxSample[], renderTick: number): { before: BoxSample; after: BoxSample; sampleAlpha: number } | null {
+  if (samples.length === 0) {
+    return null
+  }
+
+  if (renderTick <= samples[0].serverTick) {
+    return { before: samples[0], after: samples[0], sampleAlpha: 0 }
+  }
+
+  for (let index = 0; index < samples.length - 1; index += 1) {
+    const before = samples[index]
+    const after = samples[index + 1]
+    if (renderTick < before.serverTick || renderTick > after.serverTick) {
+      continue
+    }
+
+    if (after.teleported) {
+      if (renderTick < after.serverTick) {
+        return { before, after: before, sampleAlpha: 0 }
+      }
+      continue
+    }
+
+    const span = after.serverTick - before.serverTick
+    return {
+      before,
+      after,
+      sampleAlpha: span <= 0 ? 0 : (renderTick - before.serverTick) / span,
+    }
+  }
+
+  const latest = samples.at(-1)!
+  return { before: latest, after: latest, sampleAlpha: 0 }
 }
 
 function findSamplePair<T extends { serverTick: number }>(samples: T[], renderTick: number): { before: T; after: T; sampleAlpha: number } | null {
@@ -251,4 +298,8 @@ function findSamplePair<T extends { serverTick: number }>(samples: T[], renderTi
 
 function lerp(from: number, to: number, sampleAlpha: number): number {
   return from + (to - from) * sampleAlpha
+}
+
+function distance(from: { x: number; y: number; z: number }, to: { x: number; y: number; z: number }): number {
+  return Math.hypot(to.x - from.x, to.y - from.y, to.z - from.z)
 }

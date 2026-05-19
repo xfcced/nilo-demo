@@ -8,7 +8,7 @@ A browser + Rust multiplayer physics demo: server-authoritative Rapier simulatio
 - **Rolling hazards** — server-owned dynamic boxes spawn near the top, roll downhill, and **recycle** back to the launch line when they pass the bottom `recycleZ`.
 - **Networking** — WebTransport with a binary reliable control stream plus binary unreliable datagrams for `input` / `state`.
 - **Local player** — client Rapier world with input history, reconciliation on authoritative snapshots, and soft correction when prediction drifts.
-- **Remote entities** — `PlayerExtrapolator` and `BoxExtrapolator` advance the latest snapshot using linear/angular velocity (not the interpolation buffer used for rendering).
+- **Client sync** — `StateSynchronizer` owns prediction/reconciliation plus interpolation/extrapolation buffers; the dev panel can switch local, remote-player, and box render modes independently.
 - **Rendering** — fixed third-person camera from `game.json`; Three.js slope meshes and colliders shared between client prediction and visuals.
 - **Dev panel** — connection/RTT/FPS/tick, transport counters, prediction metrics, state-interval and loss charts, **Restart**, and optional debug overlays.
 
@@ -98,12 +98,12 @@ Use **WASD**, arrow keys, or the on-screen pad.
 
 A/D are mapped for the fixed camera (not world −X/+X). The local ball is predicted in a client Rapier scene that mirrors the slope colliders; the server remains authoritative and reconciliation replays inputs after each accepted snapshot.
 
-Remote players and boxes are drawn from the latest state plus velocity extrapolation. Boxes are not predicted locally.
+By default, the local player is drawn from client-side prediction, while remote players and boxes are drawn from the latest state plus velocity extrapolation. The dev panel can switch the local player to interpolation, and can independently switch remote players or boxes between extrapolation and interpolation. Boxes are not predicted locally.
 
 ### Debug overlays
 
 - **Prediction debug** — wireframe spheres for authoritative (red), predicted physics (yellow), and rendered visual (cyan) positions, plus a polyline between them. The solid local player mesh is drawn on top.
-- **Interpolation debug** — visualizes samples held in `SnapshotInterpolator` (the delay-buffer implementation). This path is **not** used for normal rendering today; it is kept for inspecting what interpolation would use.
+- **Interpolation debug** — visualizes samples held in the interpolation buffer for objects whose current render mode is `Interpolation`.
 
 **Restart** sends a control-channel `restart` and resets local sync state when the server broadcasts `restarted`.
 
@@ -231,15 +231,18 @@ Ping RTT is measured on the client by matching `ping.pingSeq` to `pong.pingSeq`.
 
 ```text
 state datagram
-  ├─► SnapshotInterpolator.pushSnapshot   (buffer + stale-tick filter; debug only)
-  ├─► PlayerExtrapolator.pushSnapshot     ──► remote player render positions
-  ├─► BoxExtrapolator.pushSnapshot        ──► box render poses
-  └─► LocalPlayerPredictor.reconcile      ──► local player prediction
+  └─► StateSynchronizer.pushServerSnapshot
+        ├─► stale/duplicate tick filter
+        ├─► SnapshotInterpolator buffer
+        ├─► PlayerExtrapolator latest states
+        ├─► BoxExtrapolator latest states
+        └─► LocalPlayerPredictor.reconcile
 
 each frame
-  ├─► LocalPlayerPredictor.renderPlayer   (local ball)
-  ├─► PlayerExtrapolator.sample           (remote players)
-  └─► BoxExtrapolator.sample              (boxes)
+  └─► StateSynchronizer.sampleRenderState
+        ├─► local player: prediction or interpolation
+        ├─► remote players: extrapolation or interpolation
+        └─► boxes: extrapolation or interpolation
 ```
 
-`game.json` → `interpolation.delayTicks` / `entityExpireTicks` still configure `SnapshotInterpolator` for the interpolation debug view. Switching live rendering back to interpolation would mean feeding `interpolator.sample()` into `ArenaScene` instead of the extrapolators.
+`game.json` → `interpolation.delayTicks` / `entityExpireTicks` configure the interpolation buffer used by interpolation render modes and interpolation debug overlays.

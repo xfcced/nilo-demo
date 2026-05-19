@@ -5,11 +5,7 @@ import { type AppElements, getAppElements } from './appElements'
 import { ArenaScene } from './ArenaScene'
 import { defaultWebTransportUrl, FIXED_STEP_MS, gameConfig } from './config'
 import { GameConnection } from './net/GameConnection'
-import type { ServerMessage } from './net/protocol'
-import { BoxExtrapolator } from './sync/BoxExtrapolator'
-import { LocalPlayerPredictor } from './sync/LocalPlayerPredictor'
-import { PlayerExtrapolator } from './sync/PlayerExtrapolator'
-import { SnapshotInterpolator } from './sync/SnapshotInterpolator'
+import { StateSynchronizer } from './sync/StateSynchronizer'
 import { DebugPanel, type DebugOptions } from './ui/DebugPanel'
 
 const PING_SEND_MS = 1000
@@ -21,14 +17,10 @@ export class GameClientApp {
   private arena: ArenaScene
   private input = new KeyboardInput()
   private serverConnection = new GameConnection()
-  private interpolator = new SnapshotInterpolator()
-  private playerExtrapolator = new PlayerExtrapolator()
-  private boxExtrapolator = new BoxExtrapolator()
-  private localPlayerPredictor = new LocalPlayerPredictor()
+  private stateSync = new StateSynchronizer()
   private debugOptions: DebugOptions = this.debugPanel.debugOptions()
   private gameLoop: GameLoop
 
-  private localPredictionTick: number | null = null
   private inputSeq = 0
   private localPlayerId: number | null = null
   private connected = false
@@ -104,16 +96,17 @@ export class GameClientApp {
 
       if (message.type === 'state') {
         const receivedAtMs = performance.now()
-        if (!this.interpolator.pushSnapshot(message, receivedAtMs)) {
+        const result = this.stateSync.pushServerSnapshot(message, receivedAtMs, this.localPlayerId)
+        if (!result.accepted) {
           return
         }
-        this.playerExtrapolator.pushSnapshot(message, receivedAtMs)
-        this.boxExtrapolator.pushSnapshot(message, receivedAtMs)
 
         this.debugPanel.setServerTick(message.serverTick)
         this.debugPanel.recordStateReceived(receivedAtMs)
         this.debugPanel.recordLossSample(message.serverTick, message.lastReceivedInputSeq)
-        this.reconcileLocalPlayer(message)
+        if (result.predictionMetrics) {
+          this.debugPanel.setPredictionMetrics(result.predictionMetrics)
+        }
         return
       }
 
@@ -137,14 +130,9 @@ export class GameClientApp {
     this.updateNetworkStats(renderDeltaMs)
     const nowMs = performance.now()
     const renderDeltaSeconds = renderDeltaMs / 1000
-    const localPlayer = this.localPlayerId === null ? null : this.localPlayerPredictor.renderPlayer(this.localPlayerId, fixedStepAlpha, renderDeltaSeconds)
-    this.interpolator.sample(nowMs, this.localPlayerId, localPlayer)
-    const renderState = {
-      players: this.playerExtrapolator.sample(nowMs, this.localPlayerId, localPlayer),
-      boxes: this.boxExtrapolator.sample(nowMs),
-    }
-    this.arena.setLocalPredictionDebug(this.debugOptions.predictionDebug && localPlayer ? this.localPlayerPredictor.debugState() : null)
-    this.arena.setInterpolationDebug(this.debugOptions.interpolationDebug ? this.interpolator.debugSamples(this.localPlayerId) : null)
+    const renderState = this.stateSync.sampleRenderState(nowMs, this.localPlayerId, fixedStepAlpha, renderDeltaSeconds)
+    this.arena.setLocalPredictionDebug(this.debugOptions.predictionDebug ? this.stateSync.localPredictionDebugState() : null)
+    this.arena.setInterpolationDebug(this.debugOptions.interpolationDebug ? this.stateSync.interpolationDebugSamples(this.localPlayerId) : null)
     this.arena.applyRenderState(renderState)
     this.arena.render()
   }
@@ -156,7 +144,7 @@ export class GameClientApp {
 
     this.pingElapsedMs += FIXED_STEP_MS
 
-    if (this.localPredictionTick !== null) {
+    if (this.stateSync.canPredictLocalInput()) {
       this.sendInput()
     }
 
@@ -181,6 +169,7 @@ export class GameClientApp {
 
     this.debugPanel.onDebugOptionsChanged((options) => {
       this.debugOptions = options
+      this.stateSync.setModes(options.syncModes)
       if (!options.predictionDebug) {
         this.arena.clearLocalPredictionDebug()
       }
@@ -232,7 +221,6 @@ export class GameClientApp {
       await this.serverConnection.send({ type: 'join' })
 
       this.connected = true
-      this.localPredictionTick = null
       this.inputSeq = 0
       this.pingElapsedMs = PING_SEND_MS
       this.debugPanel.setConnection('connected')
@@ -339,14 +327,12 @@ export class GameClientApp {
   }
 
   private sendInput(): void {
-    if (this.localPredictionTick === null) {
+    if (!this.stateSync.canPredictLocalInput()) {
       return
     }
 
-    this.localPredictionTick += 1
     const movement = this.input.currentMovement()
-    this.localPlayerPredictor.pushLocalInput(this.localPredictionTick, movement)
-    this.debugPanel.setPredictionMetrics(this.localPlayerPredictor.metrics())
+    this.debugPanel.setPredictionMetrics(this.stateSync.pushLocalInput(movement))
 
     void this.serverConnection
       .send({
@@ -361,26 +347,6 @@ export class GameClientApp {
       })
   }
 
-  private reconcileLocalPlayer(message: Extract<ServerMessage, { type: 'state' }>): void {
-    if (this.localPlayerId === null) {
-      return
-    }
-
-    const authoritativePlayer = message.players.find((player) => player.playerId === this.localPlayerId)
-    if (!authoritativePlayer) {
-      return
-    }
-
-    if (this.localPredictionTick === null) {
-      this.localPredictionTick = message.serverTick
-    } else {
-      this.localPredictionTick = Math.max(this.localPredictionTick, message.serverTick)
-    }
-
-    this.localPlayerPredictor.reconcile(authoritativePlayer, message.serverTick, message.lastReceivedInputSeq)
-    this.debugPanel.setPredictionMetrics(this.localPlayerPredictor.metrics())
-  }
-
   private resetSessionState(): void {
     this.connected = false
     this.localPlayerId = null
@@ -389,7 +355,6 @@ export class GameClientApp {
   }
 
   private resetGameplayState(): void {
-    this.localPredictionTick = null
     this.pingSeq = 0
     this.pendingPings.clear()
     this.pingElapsedMs = PING_SEND_MS
@@ -398,10 +363,7 @@ export class GameClientApp {
     this.arena.clearBoxes()
     this.arena.clearLocalPredictionDebug()
     this.arena.clearInterpolationDebug()
-    this.interpolator.reset()
-    this.playerExtrapolator.reset()
-    this.boxExtrapolator.reset()
-    this.localPlayerPredictor.reset()
+    this.stateSync.reset()
     this.debugPanel.setServerTick(null)
     this.debugPanel.setPredictionMetrics(null)
     this.debugPanel.resetStateIntervalChart()
