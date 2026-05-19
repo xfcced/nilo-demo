@@ -104,7 +104,7 @@ export class DebugTelemetry {
   onStateAccepted(message: StateMessage, predictionMetrics: PredictionMetrics | null, receivedAtMs: number): void {
     this.panel.setServerTick(message.serverTick)
     this.panel.recordStateReceived(receivedAtMs)
-    this.panel.recordLossSample(message.serverTick, message.lastReceivedInputSeq)
+    this.panel.recordLossSample(message.serverTick, message.lastReceivedInputSeq, receivedAtMs)
     if (predictionMetrics) {
       this.panel.setPredictionMetrics(predictionMetrics)
     }

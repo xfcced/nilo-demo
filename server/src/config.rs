@@ -82,14 +82,9 @@ pub struct BoxesConfig {
     pub friction: f32,
     pub linear_damping: f32,
     pub angular_damping: f32,
-    pub columns: u32,
-    pub spacing: f32,
-    pub row_spacing: f32,
-    pub spawn_launch_impulse: f32,
-    pub recycle_launch_impulse: f32,
+    pub launch_impulse: f32,
     pub launch_min_speed: f32,
-    pub spawn_rotation_max_yaw: f32,
-    pub spawn_rotation_max_tilt: f32,
+    pub rotation_max_angle: f32,
     pub surface_clearance: f32,
 }
 

@@ -38,29 +38,24 @@
     "count": 12,
     "halfExtent": 0.45,
     "density": 0.4,
-    "friction": 0.85,
-    "linearDamping": 0.35,
-    "angularDamping": 0.5,
-    "columns": 4,
-    "spacing": 1.1,
-    "rowSpacing": 0.55,
-    "spawnLaunchImpulse": 3.2,
-    "recycleLaunchImpulse": 3.2,
-    "launchMinSpeed": 1.6,
-    "spawnRotationMaxYaw": 3.14159,
-    "spawnRotationMaxTilt": 0.35,
+    "friction": 0.6,
+    "linearDamping": 0.1,
+    "angularDamping": 0.12,
+    "launchImpulse": 2.6,
+    "launchMinSpeed": 1.8,
+    "rotationMaxAngle": 3.14159,
     "surfaceClearance": 0.06
   },
   "camera": {
     "lookAtX": 0,
     "lookAtY": 3,
     "lookAtZ": 0,
-    "distance": 24,
-    "elevationDegrees": 30,
+    "distance": 27,
+    "elevationDegrees": 34,
     "yawDegrees": 20
   },
   "interpolation": {
-    "delayTicks": 2,
+    "delayTicks": 3,
     "entityExpireTicks": 8
   },
   "protocol": {

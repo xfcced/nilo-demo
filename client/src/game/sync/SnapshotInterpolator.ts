@@ -42,13 +42,26 @@ export class SnapshotInterpolator {
   pushSnapshot(snapshot: StateMessage, receivedAtMs: number): void {
     this.latestSnapshot = snapshot
     this.latestSnapshotReceivedAtMs = receivedAtMs
+    const updatedBoxIds = new Set<number>()
 
     for (const player of snapshot.players) {
       this.pushPlayerSample(player.playerId, { ...player, serverTick: snapshot.serverTick })
     }
 
     for (const box of snapshot.boxes) {
+      updatedBoxIds.add(box.boxId)
       this.pushBoxSample(box.boxId, { ...box, serverTick: snapshot.serverTick, teleported: false })
+    }
+
+    for (const [boxId, samples] of this.boxSamples) {
+      if (updatedBoxIds.has(boxId)) {
+        continue
+      }
+
+      const latest = samples.at(-1)
+      if (latest) {
+        this.pushBoxSample(boxId, { ...latest, serverTick: snapshot.serverTick, teleported: false })
+      }
     }
   }
 

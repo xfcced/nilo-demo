@@ -22,9 +22,9 @@ export type SyncModes = {
 }
 
 export const defaultSyncModes: SyncModes = {
-  localPlayer: 'prediction',
-  remotePlayers: 'extrapolation',
-  boxes: 'extrapolation',
+  localPlayer: 'interpolation',
+  remotePlayers: 'interpolation',
+  boxes: 'interpolation',
 }
 
 export type PushServerSnapshotResult = {

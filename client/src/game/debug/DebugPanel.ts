@@ -19,11 +19,13 @@ export type DebugOptions = {
   syncModes: SyncModes
 }
 
-const STATE_ARRIVAL_WINDOW_MS = 4000
-const LOSS_SAMPLE_COUNT = 120
+const CHART_WINDOW_MS = 3000
+const STATE_INTERVAL_MIN_MS = 28
+const STATE_INTERVAL_MAX_MS = 38
 const LOSS_CHART_MIN_MAX = 3
 
 type LossSample = {
+  receivedAtMs: number
   stateLoss: number
   inputLoss: number
 }
@@ -126,15 +128,10 @@ export class DebugPanel {
       predictionDebug: this.elements.predictionDebugToggle.checked,
       interpolationDebug: this.elements.interpolationDebugToggle.checked,
       syncModes: {
-        localPlayer:
-          this.elements.localPlayerSyncMode.value === 'interpolation'
-            ? 'interpolation'
-            : defaultSyncModes.localPlayer,
+        localPlayer: this.elements.localPlayerSyncMode.value === 'prediction' ? 'prediction' : defaultSyncModes.localPlayer,
         remotePlayers:
-          this.elements.remotePlayersSyncMode.value === 'interpolation'
-            ? 'interpolation'
-            : defaultSyncModes.remotePlayers,
-        boxes: this.elements.boxesSyncMode.value === 'interpolation' ? 'interpolation' : defaultSyncModes.boxes,
+          this.elements.remotePlayersSyncMode.value === 'extrapolation' ? 'extrapolation' : defaultSyncModes.remotePlayers,
+        boxes: this.elements.boxesSyncMode.value === 'extrapolation' ? 'extrapolation' : defaultSyncModes.boxes,
       },
     }
   }
@@ -190,14 +187,12 @@ export class DebugPanel {
     this.drawStateIntervalChart()
   }
 
-  recordLossSample(serverTick: number, lastReceivedInputSeq: number): void {
+  recordLossSample(serverTick: number, lastReceivedInputSeq: number, receivedAtMs: number): void {
     if (this.previousLossServerTick !== null && this.previousLossInputSeq !== null) {
       const stateLoss = Math.max(0, serverTick - this.previousLossServerTick - 1)
       const inputLoss = Math.max(0, lastReceivedInputSeq - this.previousLossInputSeq - 1)
-      this.lossSamples.push({ stateLoss, inputLoss })
-      if (this.lossSamples.length > LOSS_SAMPLE_COUNT) {
-        this.lossSamples.shift()
-      }
+      this.lossSamples.push({ receivedAtMs, stateLoss, inputLoss })
+      this.trimLossSamples(receivedAtMs)
       this.elements.stateLossValue.textContent = String(stateLoss)
       this.elements.inputLossValue.textContent = String(inputLoss)
       this.drawLossCharts()
@@ -273,8 +268,7 @@ export class DebugPanel {
     const expectedMs = 1000 / gameConfig.simulation.tickRate
     const newestArrival = this.stateArrivalSamples.at(-1)
     const windowEnd = newestArrival ?? performance.now()
-    const windowStart = windowEnd - STATE_ARRIVAL_WINDOW_MS
-    const expectedSpacing = (expectedMs / STATE_ARRIVAL_WINDOW_MS) * chartWidth
+    const windowStart = windowEnd - CHART_WINDOW_MS
 
     context.font = `${10 * pixelRatio}px ui-sans-serif, system-ui, sans-serif`
     context.fillStyle = '#555555'
@@ -291,38 +285,62 @@ export class DebugPanel {
     context.lineTo(chartRight, chartBottom)
     context.stroke()
 
+    for (const intervalMs of [STATE_INTERVAL_MIN_MS, expectedMs, STATE_INTERVAL_MAX_MS]) {
+      const y = stateIntervalToY(intervalMs, chartHeight, chartTop)
+      context.strokeStyle = intervalMs === expectedMs ? '#d0d0d0' : '#eeeeee'
+      context.beginPath()
+      context.moveTo(chartLeft, y)
+      context.lineTo(chartRight, y)
+      context.stroke()
+      context.textAlign = 'right'
+      context.fillText(String(Math.round(intervalMs)), chartLeft - 4 * pixelRatio, y - 5 * pixelRatio)
+    }
+
     context.textBaseline = 'top'
     context.textAlign = 'left'
-    context.fillText('-4s', chartLeft, chartBottom + 3 * pixelRatio)
+    context.fillText('-3s', chartLeft, chartBottom + 3 * pixelRatio)
     context.textAlign = 'right'
     context.fillText('now', chartRight, chartBottom + 3 * pixelRatio)
     context.textAlign = 'left'
-    context.fillText(`~${Math.round(expectedMs)}ms`, chartLeft + expectedSpacing + 3 * pixelRatio, chartTop + 2 * pixelRatio)
+    context.fillText('interval ms', chartLeft, 2 * pixelRatio)
 
-    context.strokeStyle = '#e6e6e6'
-    context.beginPath()
-    context.moveTo(chartLeft + expectedSpacing, chartTop)
-    context.lineTo(chartLeft + expectedSpacing, chartBottom)
-    context.stroke()
-
-    context.strokeStyle = '#2f6fda'
-    context.lineWidth = Math.max(pixelRatio, 1.5 * pixelRatio)
+    context.strokeStyle = '#c8c8c8'
+    context.lineWidth = pixelRatio
     for (const arrivalMs of this.stateArrivalSamples) {
       if (arrivalMs < windowStart || arrivalMs > windowEnd) {
         continue
       }
-      const x = chartLeft + ((arrivalMs - windowStart) / STATE_ARRIVAL_WINDOW_MS) * chartWidth
+      const x = chartLeft + ((arrivalMs - windowStart) / CHART_WINDOW_MS) * chartWidth
       context.beginPath()
       context.moveTo(x, chartTop)
       context.lineTo(x, chartBottom)
       context.stroke()
     }
+
+    drawStateIntervalLine(
+      context,
+      this.stateArrivalSamples,
+      windowStart,
+      windowEnd,
+      chartLeft,
+      chartWidth,
+      chartHeight,
+      chartTop,
+      pixelRatio,
+    )
   }
 
   private trimStateArrivalSamples(nowMs: number): void {
-    const minArrivalMs = nowMs - STATE_ARRIVAL_WINDOW_MS
+    const minArrivalMs = nowMs - CHART_WINDOW_MS
     while (this.stateArrivalSamples.length > 0 && this.stateArrivalSamples[0] < minArrivalMs) {
       this.stateArrivalSamples.shift()
+    }
+  }
+
+  private trimLossSamples(nowMs: number): void {
+    const minSampleMs = nowMs - CHART_WINDOW_MS
+    while (this.lossSamples.length > 0 && this.lossSamples[0].receivedAtMs < minSampleMs) {
+      this.lossSamples.shift()
     }
   }
 
@@ -376,13 +394,24 @@ export class DebugPanel {
 
     context.textBaseline = 'top'
     context.textAlign = 'left'
-    context.fillText('old', chartLeft, chartBottom + 3 * pixelRatio)
+    context.fillText('-3s', chartLeft, chartBottom + 3 * pixelRatio)
     context.textAlign = 'right'
     context.fillText('now', chartRight, chartBottom + 3 * pixelRatio)
     context.textAlign = 'left'
     context.fillText('lost/sample', chartLeft, 2 * pixelRatio)
 
-    drawLossLine(context, this.lossSamples, key, color, chartLeft, chartWidth, chartHeight, chartTop, maxLoss, pixelRatio)
+    drawLossLine(
+      context,
+      this.lossSamples,
+      key,
+      color,
+      chartLeft,
+      chartWidth,
+      chartHeight,
+      chartTop,
+      maxLoss,
+      pixelRatio,
+    )
   }
 }
 
@@ -424,8 +453,10 @@ function drawLossLine(
   context.beginPath()
 
   const lastIndex = samples.length - 1
+  const windowEnd = samples[lastIndex].receivedAtMs
+  const windowStart = windowEnd - CHART_WINDOW_MS
   for (let index = 0; index < samples.length; index += 1) {
-    const x = chartLeft + (chartWidth * index) / lastIndex
+    const x = chartLeft + ((samples[index].receivedAtMs - windowStart) / CHART_WINDOW_MS) * chartWidth
     const y = lossToY(samples[index][key], maxLoss, chartHeight, chartTop)
     if (index === 0) {
       context.moveTo(x, y)
@@ -435,6 +466,49 @@ function drawLossLine(
   }
 
   context.stroke()
+}
+
+function drawStateIntervalLine(
+  context: CanvasRenderingContext2D,
+  arrivals: number[],
+  windowStart: number,
+  windowEnd: number,
+  chartLeft: number,
+  chartWidth: number,
+  chartHeight: number,
+  chartTop: number,
+  pixelRatio: number,
+): void {
+  if (arrivals.length < 2) {
+    return
+  }
+
+  let started = false
+  context.strokeStyle = '#2f6fda'
+  context.lineWidth = 1.5 * pixelRatio
+  context.beginPath()
+
+  for (let index = 1; index < arrivals.length; index += 1) {
+    const arrivalMs = arrivals[index]
+    if (arrivalMs < windowStart || arrivalMs > windowEnd) {
+      continue
+    }
+
+    const intervalMs = arrivalMs - arrivals[index - 1]
+    const x = chartLeft + ((arrivalMs - windowStart) / CHART_WINDOW_MS) * chartWidth
+    const y = stateIntervalToY(intervalMs, chartHeight, chartTop)
+
+    if (!started) {
+      context.moveTo(x, y)
+      started = true
+    } else {
+      context.lineTo(x, y)
+    }
+  }
+
+  if (started) {
+    context.stroke()
+  }
 }
 
 function getElement<T extends HTMLElement>(id: string): T {
@@ -465,4 +539,10 @@ function formatBytesPerSec(bytesPerSec: number): string {
 function lossToY(loss: number, maxLoss: number, chartHeight: number, paddingY: number): number {
   const clamped = Math.max(0, Math.min(maxLoss, loss))
   return paddingY + chartHeight - (clamped / maxLoss) * chartHeight
+}
+
+function stateIntervalToY(intervalMs: number, chartHeight: number, paddingY: number): number {
+  const clamped = Math.max(STATE_INTERVAL_MIN_MS, Math.min(STATE_INTERVAL_MAX_MS, intervalMs))
+  const alpha = (clamped - STATE_INTERVAL_MIN_MS) / (STATE_INTERVAL_MAX_MS - STATE_INTERVAL_MIN_MS)
+  return paddingY + chartHeight - alpha * chartHeight
 }

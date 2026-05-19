@@ -14,6 +14,7 @@ const DEBUG_MARKER_RENDER_ORDER: Record<DebugMarkerName, number> = {
   renderedVisual: 3,
 }
 const GAMEPLAY_RENDER_ORDER = 10
+const WORLD_AXIS_RENDER_ORDER = 20
 
 export class ArenaScene {
   private renderer: THREE.WebGLRenderer
@@ -274,6 +275,8 @@ export class ArenaScene {
       this.scene.add(wall)
     }
 
+    this.scene.add(this.createWorldAxisMarker(slope))
+
     const launchMarkerPosition = slopeSurfaceWorldPosition(
       slope,
       0,
@@ -291,6 +294,30 @@ export class ArenaScene {
       ),
     )
     this.scene.add(topMarker)
+  }
+
+  private createWorldAxisMarker(slope: typeof gameConfig.slope): THREE.Group {
+    const origin = slopeSurfaceWorldPosition(slope, -slope.halfX + 0.9, slope.halfZ - 0.8, 1.1)
+    const group = new THREE.Group()
+    group.position.copy(origin)
+
+    this.addAxisArrow(group, new THREE.Vector3(1, 0, 0), 0xd64545, 'X')
+    this.addAxisArrow(group, new THREE.Vector3(0, 1, 0), 0x2f8f4e, 'Y')
+    this.addAxisArrow(group, new THREE.Vector3(0, 0, 1), 0x2f6fda, 'Z')
+
+    return group
+  }
+
+  private addAxisArrow(group: THREE.Group, direction: THREE.Vector3, color: number, label: string): void {
+    const length = 1.25
+    const arrow = new THREE.ArrowHelper(direction, new THREE.Vector3(0, 0, 0), length, color, 0.24, 0.12)
+    arrow.renderOrder = WORLD_AXIS_RENDER_ORDER
+    group.add(arrow)
+
+    const labelSprite = createAxisLabel(label, color)
+    labelSprite.position.copy(direction.clone().multiplyScalar(length + 0.22))
+    labelSprite.renderOrder = WORLD_AXIS_RENDER_ORDER
+    group.add(labelSprite)
   }
 
   private createPlayer(isLocal: boolean): THREE.Mesh {
@@ -514,4 +541,36 @@ function createPlayerTexture(): THREE.CanvasTexture {
   texture.wrapT = THREE.RepeatWrapping
   texture.anisotropy = 4
   return texture
+}
+
+function createAxisLabel(text: string, color: number): THREE.Sprite {
+  const canvas = document.createElement('canvas')
+  canvas.width = 64
+  canvas.height = 64
+  const context = canvas.getContext('2d')
+  if (!context) {
+    throw new Error('Could not create axis label texture')
+  }
+
+  context.font = '700 38px ui-sans-serif, system-ui, sans-serif'
+  context.textAlign = 'center'
+  context.textBaseline = 'middle'
+  context.lineWidth = 7
+  context.strokeStyle = '#ffffff'
+  context.strokeText(text, 32, 34)
+  context.fillStyle = `#${color.toString(16).padStart(6, '0')}`
+  context.fillText(text, 32, 34)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({
+      map: texture,
+      transparent: true,
+      depthTest: true,
+      depthWrite: false,
+    }),
+  )
+  sprite.scale.setScalar(0.42)
+  return sprite
 }

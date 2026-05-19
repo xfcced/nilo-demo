@@ -2,6 +2,7 @@ use super::protocol::{BoxSnapshot, PlayerSnapshot};
 use super::room::PlayerInput;
 use crate::config::{BoxesConfig, GameConfig, SlopeConfig};
 use glam::{EulerRot, Quat};
+use rand::Rng;
 use rapier3d::prelude::*;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -149,8 +150,12 @@ impl World {
 
     pub fn step(&mut self, delta_seconds: f32) {
         if self.pending_box_launch {
-            let handles = self.boxes.iter().map(|box_body| box_body.body).collect::<Vec<_>>();
-            let impulse = self.config.boxes.spawn_launch_impulse;
+            let handles = self
+                .boxes
+                .iter()
+                .map(|box_body| box_body.body)
+                .collect::<Vec<_>>();
+            let impulse = self.config.boxes.launch_impulse;
             let min_speed = self.config.boxes.launch_min_speed;
             for body_handle in handles {
                 self.launch_box_along_slope(body_handle, impulse, min_speed);
@@ -228,11 +233,7 @@ impl World {
     fn build_slope_scene(&mut self) {
         let slope = self.config.slope.clone();
         let collider = ColliderBuilder::cuboid(slope.half_x, slope.half_y, slope.half_z)
-            .translation(Vector::new(
-                slope.center_x,
-                slope.center_y,
-                slope.center_z,
-            ))
+            .translation(Vector::new(slope.center_x, slope.center_y, slope.center_z))
             .rotation(Vector::new(
                 slope.rotation_x,
                 slope.rotation_y,
@@ -242,26 +243,19 @@ impl World {
             .build();
         self.colliders.insert(collider);
 
-        let rotation = Vector::new(
-            slope.rotation_x,
-            slope.rotation_y,
-            slope.rotation_z,
-        );
+        let rotation = Vector::new(slope.rotation_x, slope.rotation_y, slope.rotation_z);
         let wall_half_height = slope.side_wall_height / 2.0;
         let wall_half_thickness = slope.side_wall_thickness / 2.0;
         let wall_half_depth = slope.half_z + 0.2;
 
         for side_sign in [-1.0_f32, 1.0] {
             let translation = side_wall_translation(&slope, side_sign);
-            let collider = ColliderBuilder::cuboid(
-                wall_half_thickness,
-                wall_half_height,
-                wall_half_depth,
-            )
-            .translation(translation)
-            .rotation(rotation)
-            .friction(1.0)
-            .build();
+            let collider =
+                ColliderBuilder::cuboid(wall_half_thickness, wall_half_height, wall_half_depth)
+                    .translation(translation)
+                    .rotation(rotation)
+                    .friction(1.0)
+                    .build();
             self.colliders.insert(collider);
         }
     }
@@ -273,10 +267,11 @@ impl World {
         let linear_damping = self.config.boxes.linear_damping;
         let angular_damping = self.config.boxes.angular_damping;
         let friction = self.config.boxes.friction;
+        let mut rng = rand::rng();
 
         for index in 0..self.config.boxes.count {
             let box_id = index as u64 + 1;
-            let (x, y, z) = self.box_launch_position(index as usize);
+            let (x, y, z) = self.random_box_launch_position(&mut rng);
             let body = RigidBodyBuilder::dynamic()
                 .translation(Vector::new(x, y, z))
                 .linear_damping(linear_damping)
@@ -286,7 +281,7 @@ impl World {
             let body_handle = self.bodies.insert(body);
             if let Some(body) = self.bodies.get_mut(body_handle) {
                 body.set_rotation(
-                    random_box_rotation(&self.config.slope, &self.config.boxes, box_id),
+                    random_box_rotation(&self.config.slope, &self.config.boxes, &mut rng),
                     true,
                 );
             }
@@ -307,6 +302,7 @@ impl World {
     fn recycle_boxes(&mut self) {
         let recycle_z = self.config.slope.recycle_z;
         let box_count = self.boxes.len();
+        let mut rng = rand::rng();
         for index in 0..box_count {
             let box_body = self.boxes[index];
             let body_handle = box_body.body;
@@ -318,36 +314,30 @@ impl World {
                 continue;
             }
 
-            let (x, y, z) = self.box_launch_position(index);
+            let (x, y, z) = self.random_box_launch_position(&mut rng);
             let Some(body) = self.bodies.get_mut(body_handle) else {
                 continue;
             };
 
-            let box_id = box_body.id;
             body.set_translation(Vector::new(x, y, z), true);
             body.set_rotation(
-                random_box_rotation(&self.config.slope, &self.config.boxes, box_id),
+                random_box_rotation(&self.config.slope, &self.config.boxes, &mut rng),
                 true,
             );
             body.set_linvel(Vector::ZERO, true);
             body.set_angvel(Vector::ZERO, true);
             self.launch_box_along_slope(
                 body_handle,
-                self.config.boxes.recycle_launch_impulse,
+                self.config.boxes.launch_impulse,
                 self.config.boxes.launch_min_speed,
             );
         }
     }
 
-    fn box_launch_position(&self, index: usize) -> (f32, f32, f32) {
-        let columns = self.config.boxes.columns.max(1) as usize;
-        let col = index % columns;
-        let row = index / columns;
-        let start_x = -((columns as f32 - 1.0) * self.config.boxes.spacing) / 2.0;
-        let local_x = start_x + col as f32 * self.config.boxes.spacing;
-        let local_z =
-            self.config.slope.half_z - self.config.slope.launch_local_z_inset
-                - row as f32 * self.config.boxes.row_spacing;
+    fn random_box_launch_position(&self, rng: &mut impl Rng) -> (f32, f32, f32) {
+        let max_x = (self.config.slope.half_x - self.config.boxes.half_extent).max(0.0);
+        let local_x = rng.random_range(-max_x..=max_x);
+        let local_z = self.config.slope.half_z - self.config.slope.launch_local_z_inset;
         let clearance = self.config.boxes.half_extent + self.config.boxes.surface_clearance;
         let world = slope_surface_world_position(&self.config.slope, local_x, local_z, clearance);
         (world.x, world.y, world.z)
@@ -367,11 +357,7 @@ impl World {
     ) {
         let downhill = slope_downhill_direction(&self.config.slope);
         let mass = self.box_mass().max(f32::EPSILON);
-        let speed_from_impulse = if impulse > 0.0 {
-            impulse / mass
-        } else {
-            0.0
-        };
+        let speed_from_impulse = if impulse > 0.0 { impulse / mass } else { 0.0 };
         let launch_speed = speed_from_impulse.max(min_speed);
 
         let Some(body) = self.bodies.get_mut(body_handle) else {
@@ -386,11 +372,11 @@ impl World {
     }
 }
 
-fn random_box_rotation(slope: &SlopeConfig, boxes: &BoxesConfig, box_id: u64) -> Rotation {
-    let yaw = pseudo_random01(box_id, 1) * boxes.spawn_rotation_max_yaw;
-    let tilt_x = (pseudo_random01(box_id, 2) * 2.0 - 1.0) * boxes.spawn_rotation_max_tilt;
-    let tilt_z = (pseudo_random01(box_id, 3) * 2.0 - 1.0) * boxes.spawn_rotation_max_tilt;
-    let local = Quat::from_euler(EulerRot::XYZ, tilt_x, yaw, tilt_z);
+fn random_box_rotation(slope: &SlopeConfig, boxes: &BoxesConfig, rng: &mut impl Rng) -> Rotation {
+    let rotation_x = rng.random_range(-boxes.rotation_max_angle..=boxes.rotation_max_angle);
+    let rotation_y = rng.random_range(-boxes.rotation_max_angle..=boxes.rotation_max_angle);
+    let rotation_z = rng.random_range(-boxes.rotation_max_angle..=boxes.rotation_max_angle);
+    let local = Quat::from_euler(EulerRot::XYZ, rotation_x, rotation_y, rotation_z);
     let slope_rot = Quat::from_euler(
         EulerRot::XYZ,
         slope.rotation_x,
@@ -398,15 +384,6 @@ fn random_box_rotation(slope: &SlopeConfig, boxes: &BoxesConfig, box_id: u64) ->
         slope.rotation_z,
     );
     local * slope_rot
-}
-
-fn pseudo_random01(seed: u64, channel: u64) -> f32 {
-    let mut hash = seed.wrapping_mul(6364136223846793005).wrapping_add(channel);
-    hash ^= hash >> 33;
-    hash = hash.wrapping_mul(0xff51afd7ed558ccd);
-    hash ^= hash >> 33;
-    let unit = (hash & 0x00ff_ffff) as f32 / 16_777_215.0;
-    unit.clamp(0.0, 1.0)
 }
 
 fn slope_downhill_direction(slope: &SlopeConfig) -> Vector {
@@ -420,11 +397,7 @@ fn slope_downhill_direction(slope: &SlopeConfig) -> Vector {
 
 fn side_wall_translation(slope: &SlopeConfig, side_sign: f32) -> Vector {
     let wall_half_thickness = slope.side_wall_thickness / 2.0;
-    let local_offset = Vector::new(
-        side_sign * (slope.half_x + wall_half_thickness),
-        0.0,
-        0.0,
-    );
+    let local_offset = Vector::new(side_sign * (slope.half_x + wall_half_thickness), 0.0, 0.0);
     rotate_vector_by_slope_euler(slope, local_offset)
         + Vector::new(slope.center_x, slope.center_y, slope.center_z)
 }
@@ -435,21 +408,13 @@ pub(crate) fn slope_surface_world_position(
     local_z: f32,
     clearance_above_surface: f32,
 ) -> Vector {
-    let local_point = Vector::new(
-        local_x,
-        slope.half_y + clearance_above_surface,
-        local_z,
-    );
+    let local_point = Vector::new(local_x, slope.half_y + clearance_above_surface, local_z);
     rotate_vector_by_slope_euler(slope, local_point)
         + Vector::new(slope.center_x, slope.center_y, slope.center_z)
 }
 
 fn rotate_vector_by_slope_euler(slope: &SlopeConfig, local: Vector) -> Vector {
-    let (rx, ry, rz) = (
-        slope.rotation_x,
-        slope.rotation_y,
-        slope.rotation_z,
-    );
+    let (rx, ry, rz) = (slope.rotation_x, slope.rotation_y, slope.rotation_z);
     let (sx, cx) = rx.sin_cos();
     let (sy, cy) = ry.sin_cos();
     let (sz, cz) = rz.sin_cos();
@@ -572,9 +537,7 @@ mod tests {
         let mut world = World::new(test_config());
         world.step(1.0 / 30.0);
 
-        let box_handle = world
-            .box_handle_for_id(1)
-            .expect("missing box");
+        let box_handle = world.box_handle_for_id(1).expect("missing box");
         let velocity = world
             .bodies
             .get(box_handle)
@@ -617,16 +580,18 @@ mod tests {
     #[test]
     fn box_recycles_when_it_reaches_bottom() {
         let mut world = World::new(test_config());
-        let box_handle = world
-            .box_handle_for_id(1)
-            .expect("missing box");
+        let box_handle = world.box_handle_for_id(1).expect("missing box");
 
         world
             .bodies
             .get_mut(box_handle)
             .expect("missing box body")
             .set_translation(
-                Vector::new(0.0, world.config.player.spawn_y, world.config.slope.recycle_z - 1.0),
+                Vector::new(
+                    0.0,
+                    world.config.player.spawn_y,
+                    world.config.slope.recycle_z - 1.0,
+                ),
                 true,
             );
 
